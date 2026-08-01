@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { ExternalLink, Info, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Info, TriangleAlert } from 'lucide-react'
 
 export function SummaryCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return <article className="summary-card"><span>{label}</span><strong>{value}</strong>{detail ? <small>{detail}</small> : null}</article>
@@ -20,6 +20,22 @@ export function ExternalLinkButton({ href, children, className = '' }: { href: s
 
 export function Button({ className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button className={`button ${className}`} {...props} />
+}
+
+export function SeeMoreButton({ expanded, onClick, moreLabel = 'See more options', lessLabel = 'See fewer options', count }: {
+  expanded: boolean
+  onClick: () => void
+  moreLabel?: string
+  lessLabel?: string
+  count?: number
+}) {
+  const Icon = expanded ? ChevronUp : ChevronDown
+  return (
+    <button className="see-more-button" type="button" onClick={onClick} aria-expanded={expanded}>
+      <span>{expanded ? lessLabel : moreLabel}{!expanded && count ? ` (${count})` : ''}</span>
+      <Icon size={18} />
+    </button>
+  )
 }
 
 export function EmptyMapGraphic({ points = 3 }: { points?: number }) {

@@ -1,6 +1,6 @@
 # Banff 2026 Trip Planner
 
-A responsive, production-ready trip dashboard for four adults traveling through Banff and the Canadian Rockies from October 3–10, 2026. It combines a weather-flexible itinerary, lodging comparison, shuttle planning, dining, activities, an interactive map, budget estimates, and browser-local packing and reservation lists.
+A responsive, production-ready trip dashboard for four adults traveling through Banff and the Canadian Rockies from October 3–10, 2026. It combines a weather-flexible itinerary, lodging comparison, shuttle planning, dining, activities, an interactive map, budget estimates, and local-first packing and reservation lists.
 
 ## Run locally
 
@@ -23,9 +23,20 @@ The included `netlify.toml` uses:
 - Build command: `npm run build`
 - Publish directory: `dist`
 - SPA fallback: all routes redirect to `/index.html`
-- Environment variables: none
+- Environment variables: Supabase browser settings for collaboration and Miller Time AI
 
-Connect this repository in Netlify and accept the detected settings, or run the Netlify CLI from the repository root. The app does not require Supabase or any paid API in version one.
+Connect this repository in Netlify and accept the detected settings, or run the Netlify CLI from the repository root. The core local-first planner works without environment variables. To enable Miller Time AI and optional collaboration, add:
+
+```bash
+VITE_SUPABASE_URL=https://mymunodjaxymhbnhjwjx.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
+
+Use a publishable key only. Never expose a Supabase secret or service-role key in Vite or Netlify browser variables. Add the deployed Netlify origin to Supabase Auth's allowed redirect URLs so magic links can return to the app.
+
+The floating Miller Time AI virtual travel agent runs in `supabase/functions/miller-time-ai/`. The Book & Reserve page uses `supabase/functions/booking-readiness/` to refresh current official reservation guidance while keeping date-specific inventory claims conservative. Both functions read `ANTHROPIC_API_KEY` from the Supabase project's Edge Function secrets, so the key is never duplicated in Netlify or bundled into the browser app. The functions accept the project's publishable key, which allows account-free visitors while rejecting requests that are not made through a configured Supabase client.
+
+For local Edge Function development, use `supabase functions serve miller-time-ai --env-file <ignored-env-file>` or `supabase functions serve booking-readiness --env-file <ignored-env-file>`. Never commit the Anthropic key. The optional Supabase secret `ANTHROPIC_MODEL` can override the default model without changing code.
 
 ## Content and architecture
 
@@ -42,9 +53,20 @@ Trip content lives separately from presentation in `src/data/`:
 
 Update lodging estimates in `src/data/lodging.ts`. Every lodging price is intentionally labeled with a last-checked date and a direct-verification warning.
 
-## Browser-local preferences
+## Local-first preferences and collaboration
 
-The app stores only optional planning choices in `localStorage`, namespaced with `banff-2026:`. These include the preferred lodging option, checklist completion, reservation statuses, budget estimates, optional itinerary expansion, and personal notes. No accounts, tracking, or remote database are used.
+All optional planning choices are stored in `localStorage`, namespaced with `banff-2026:`. These include the preferred lodging option, checklist completion, reservation statuses, budget estimates, optional itinerary expansion, and personal notes. Visitors do not need an account and anonymous sessions never write to Supabase.
+
+The first local edit shows a small, dismissible confirmation explaining that the change is saved only on that device. Choosing **Collaborate** opens passwordless email sign-in. After sign-in, existing local choices are copied to a shared trip and subsequent edits sync through Supabase Realtime. Signing out leaves the browser-local copy intact.
+
+Database migrations live in `supabase/migrations/`. The dedicated `travel_planner` schema contains:
+
+- `profiles` — private account display names
+- `trips` — shared trip ownership and dates
+- `trip_members` — owner/editor/viewer membership and pending email invitations
+- `trip_state` — one JSON value per local preference key for low-conflict syncing
+
+Every table has row-level security. The `anon` role has no schema or table privileges; authenticated reads and writes require matching trip membership. Owners can add collaborators by email, and the recipient joins after signing in with that same address.
 
 ## Maps and imagery
 

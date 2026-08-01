@@ -17,7 +17,7 @@ export function OverviewPage() {
   }
   return (
     <>
-      <PageHeader title={trip.title} subtitle={`${trip.dates} · ${trip.travelers.length} Travelers`} actions={<><Button className="secondary" onClick={share}>{copied ? <Check size={16} /> : null}{copied ? 'Copied' : 'Share trip'}</Button><AppLink className="button primary" href="/itinerary">View itinerary</AppLink></>} />
+      <PageHeader title={trip.title} subtitle={`${trip.dates} · ${trip.travelers.length} Travelers`} actions={<><Button className="secondary" onClick={share}>{copied ? <Check size={16} /> : null}{copied ? 'Copied' : 'Share trip'}</Button><AppLink className="button primary" href="/book">Book & reserve</AppLink></>} />
       <div className="summary-grid six">
         <SummaryCard label="Trip dates" value="Oct 3 – Oct 10" />
         <SummaryCard label="Nights" value="7 nights" />
@@ -61,12 +61,12 @@ export function OverviewPage() {
               const done = checked.includes(item)
               return <label key={item}><input type="checkbox" checked={done} onChange={() => setChecked((current) => done ? current.filter((entry) => entry !== item) : [...current, item])} /><span>{item}</span></label>
             })}
-            <AppLink className="text-link" href="/notes">View full checklist</AppLink>
+            <AppLink className="text-link" href="/book">Open booking center</AppLink>
           </section>
         </aside>
       </div>
       <div className="quick-links" aria-label="Trip quick links">
-        <AppLink href="/itinerary"><CalendarCheck2 />Itinerary</AppLink><AppLink href="/lodging"><BedDouble />Compare stays</AppLink><AppLink href="/transportation"><Bus />Shuttles</AppLink><AppLink href="/map"><MapPinned />Trip map</AppLink><AppLink href="/notes"><Users />Group lists</AppLink>
+        <AppLink href="/book"><CalendarCheck2 />Book & reserve</AppLink><AppLink href="/lodging"><BedDouble />Compare stays</AppLink><AppLink href="/transportation"><Bus />Shuttles</AppLink><AppLink href="/map"><MapPinned />Trip map</AppLink><AppLink href="/notes"><Users />Group lists</AppLink>
       </div>
     </>
   )

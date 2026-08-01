@@ -8,6 +8,9 @@ const colors: Record<MapLocation['category'], string> = {
   'Scenic stops': '#0e7490', Airport: '#334155', 'Visitor centers': '#b45309',
 }
 
+const googleMapsUrl = ([latitude, longitude]: [number, number]) =>
+  `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`
+
 export function FullMap({ locations, onSelect }: { locations: MapLocation[]; onSelect: (location: MapLocation) => void }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<LeafletMap | null>(null)
@@ -50,7 +53,7 @@ export function FullMap({ locations, onSelect }: { locations: MapLocation[]; onS
         const marker = L.marker(location.coordinates, {
           icon: L.divIcon({ className: 'custom-map-marker', html: `<span style="background:${colors[location.category]}"></span>`, iconSize: [24, 24], iconAnchor: [12, 12] }),
         })
-        marker.bindPopup(`<strong>${location.name}</strong><small>${location.category} · ${location.day}</small><p>${location.note}</p>`)
+        marker.bindPopup(`<strong>${location.name}</strong><small>${location.category} · ${location.day}</small><p>${location.note}</p><a class="google-maps-link" href="${googleMapsUrl(location.coordinates)}" target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>`)
         marker.on('click', () => onSelect(location))
         marker.addTo(layerRef.current!)
       })

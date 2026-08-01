@@ -1,14 +1,17 @@
 import { useState, type ReactNode } from 'react'
 import {
-  BedDouble, Bus, CalendarDays, ChevronRight, CircleDollarSign, Compass,
+  BedDouble, Bus, CalendarCheck2, CalendarDays, ChevronRight, CircleDollarSign, Compass,
   Home, Map, Menu, NotebookPen, Route, Utensils, X,
 } from 'lucide-react'
 import { trip } from '../data/trip'
 import { AppLink, usePathname } from './AppLink'
+import { CollaborationStatusButton } from './CollaborationModal'
+import { MillerTimeAI } from './MillerTimeAI'
 
 const nav = [
   { to: '/', label: 'Trip Overview', icon: Home },
   { to: '/itinerary', label: 'Itinerary', icon: CalendarDays },
+  { to: '/book', label: 'Book & Reserve', icon: CalendarCheck2 },
   { to: '/lodging', label: 'Lodging', icon: BedDouble },
   { to: '/transportation', label: 'Transportation & Shuttles', icon: Bus },
   { to: '/dining', label: 'Dining & Drinks', icon: Utensils },
@@ -22,7 +25,7 @@ function Sidebar({ close }: { close?: () => void }) {
   return (
     <aside className="sidebar" aria-label="Primary navigation">
       <div className="brand-block">
-        <img src="/mountain-mark.svg" alt="" className="brand-mark" />
+        <img src="/brand/mt-travel-logo-320.jpg" alt="" className="brand-mark" />
         <div><strong>BANFF 2026</strong><span>Oct 3 – Oct 10, 2026</span></div>
       </div>
       <img className="sidebar-photo" src="/images/moraine-lake.jpg" alt="Moraine Lake in early October" />
@@ -55,13 +58,13 @@ function TopBar({ openMenu }: { openMenu: () => void }) {
   return (
     <header className="topbar">
       <button className="icon-button mobile-menu" onClick={openMenu} aria-label="Open navigation"><Menu size={21} /></button>
-      <div className="mobile-title"><strong>{current.label}</strong><span>{trip.shortDates}</span></div>
+      <div className="mobile-title"><img src="/brand/mt-travel-logo-320.jpg" alt="" /><div><strong>{current.label}</strong><span>{trip.shortDates}</span></div></div>
       <nav className="topnav" aria-label="Section shortcuts">
-        {nav.slice(0, 8).map(({ to, label, icon: Icon }) => (
-          <AppLink key={to} href={to} exact={to === '/'}><Icon size={16} /><span>{label.replace('Transportation & Shuttles', 'Transport').replace('Budget & Expenses', 'Budget')}</span></AppLink>
+        {nav.slice(0, 9).map(({ to, label, icon: Icon }) => (
+          <AppLink key={to} href={to} exact={to === '/'}><Icon size={16} /><span>{label.replace('Transportation & Shuttles', 'Transport').replace('Budget & Expenses', 'Budget').replace('Book & Reserve', 'Book')}</span></AppLink>
         ))}
       </nav>
-      <div className="trip-countdown"><Route size={16} /><span>63 days to go</span></div>
+      <div className="topbar-utility"><div className="trip-countdown"><Route size={16} /><span>63 days to go</span></div><CollaborationStatusButton /></div>
     </header>
   )
 }
@@ -89,6 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {nav.slice(0, 4).map(({ to, label, icon: Icon }) => <AppLink key={to} href={to} exact={to === '/'}><Icon size={19} /><span>{label.split(' ')[0]}</span></AppLink>)}
         <button onClick={() => setDrawer(true)}><Menu size={19} /><span>More</span></button>
       </nav>
+      <MillerTimeAI />
     </div>
   )
 }

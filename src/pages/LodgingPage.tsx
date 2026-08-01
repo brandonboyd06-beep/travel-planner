@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Car, Check, CookingPot, ExternalLink, Heart, MapPin, Waves } from 'lucide-react'
+import { BedDouble, CalendarRange, Car, Check, CookingPot, ExternalLink, Heart, MapPin, Sparkles, Users, Waves } from 'lucide-react'
 import { PageHeader, SectionHeading } from '../components/AppShell'
 import { LodgingCalculator } from '../components/LodgingCalculator'
-import { AlertBanner, Button, StatusPill } from '../components/ui'
+import { AlertBanner, Button, SeeMoreButton, StatusPill } from '../components/ui'
 import { lodging } from '../data/lodging'
+import { lodgingScenarios } from '../data/lodgingScenarios'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 
 const tabs = ['Recommended', 'Banff hotels', 'Banff rentals', 'Canmore hotels', 'Canmore rentals', 'Split-stay scenarios']
@@ -11,12 +12,21 @@ const tabs = ['Recommended', 'Banff hotels', 'Banff rentals', 'Canmore hotels', 
 export function LodgingPage() {
   const [tab, setTab] = useState('Recommended')
   const [preferred, setPreferred] = useLocalStorage<string>('preferred-lodging', '')
+  const [selectedScenarioId, setSelectedScenarioId] = useLocalStorage<string>('lodging-scenario', 'scenario-a')
+  const [showAllStays, setShowAllStays] = useState(false)
+  const [showScenarioDetails, setShowScenarioDetails] = useState(false)
   const filtered = useMemo(() => {
     if (tab === 'Recommended') return lodging.filter((item) => item.recommended)
     if (tab === 'Split-stay scenarios') return lodging.filter((item) => item.recommended)
     const [town, type] = tab.split(' ')
     return lodging.filter((item) => item.town === town && (type === 'hotels' ? item.type === 'Hotel' : item.type === 'Condo / rental'))
   }, [tab])
+  const visibleLodging = showAllStays ? filtered : filtered.slice(0, 4)
+  const selectedScenario = lodgingScenarios.find((scenario) => scenario.id === selectedScenarioId) ?? lodgingScenarios[0]
+  const chooseScenario = (id: string) => {
+    setSelectedScenarioId(id)
+    setShowScenarioDetails(false)
+  }
   return (
     <>
       <PageHeader title="Lodging comparison" subtitle="A four-night Banff + three-night Canmore split is the leading strategy" />
@@ -24,14 +34,66 @@ export function LodgingPage() {
       <AlertBanner><strong>Research snapshot only.</strong><span> Rates, taxes, fees, and inventory are not guaranteed. Use “Verify direct price” before booking.</span></AlertBanner>
       <div className="filter-bar" role="tablist" aria-label="Lodging filters">{tabs.map((item) => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</div>
       <section className="lodging-list">
-        {filtered.map((item) => (
+        {visibleLodging.map((item) => (
           <article className={`lodging-card ${preferred === item.id ? 'selected' : ''}`} key={item.id}>
             <div className="lodging-main"><div className="property-heading"><div><span>{item.town} · {item.type}</span><h2>{item.name}</h2></div><div className="score"><strong>{item.score}</strong><span>review score</span></div></div><div className="property-price"><strong>${item.price}<small>/ avg night</small></strong><span>${item.total.toLocaleString()} estimated segment</span></div><div className="amenity-row"><span><MapPin />{item.walkability}</span><span><Car />{item.parking}</span><span><CookingPot />{item.kitchen}</span><span><Waves />{item.amenities}</span></div><div className="pros-cons"><div><strong>Why it works</strong>{item.pros.map((pro) => <span key={pro}><Check />{pro}</span>)}</div><div><strong>Watch-outs</strong>{item.cons.map((con) => <span key={con}>— {con}</span>)}</div></div></div>
             <aside className="lodging-meta"><StatusPill tone={item.recommended ? 'green' : 'gray'}>{item.recommended ? 'Recommended' : item.transit}</StatusPill><p><strong>Loyalty</strong>{item.loyalty}</p><p><strong>Configuration</strong>{item.rooms}</p><p><strong>Last checked</strong>{item.lastChecked}</p><small>Taxes and fees: verify directly</small><a className="button secondary" href={item.url} target="_blank" rel="noopener noreferrer">Verify direct price<ExternalLink size={14} /></a><Button className={preferred === item.id ? 'primary' : 'ghost'} onClick={() => setPreferred(preferred === item.id ? '' : item.id)}><Heart size={15} fill={preferred === item.id ? 'currentColor' : 'none'} />{preferred === item.id ? 'Preferred stay' : 'Mark preferred'}</Button></aside>
           </article>
         ))}
       </section>
-      <section className="scenario-section"><SectionHeading title="Scenario snapshot" /><div className="scenario-grid"><article><span>Scenario A · recommended</span><strong>$6,810</strong><p>4 Banff hotel nights, 3 rooms + 3 Canmore rental nights</p><StatusPill tone="green">$1,190 under cap</StatusPill></article><article><span>Scenario B</span><strong>$7,866</strong><p>7 central Banff nights, 3 rooms at a target $325 average</p><StatusPill tone="amber">Little fee buffer</StatusPill></article><article><span>Scenario C</span><strong>$4,250</strong><p>7 nights in one central Canmore three-bedroom rental</p><StatusPill tone="blue">Best value</StatusPill></article></div></section>
+      {filtered.length > 4 ? <SeeMoreButton expanded={showAllStays} onClick={() => setShowAllStays((value) => !value)} count={filtered.length - 4} moreLabel="See more lodging options" lessLabel="See fewer lodging options" /> : null}
+      <section className="scenario-section">
+        <SectionHeading title="Choose a lodging scenario" />
+        <p className="section-intro">Click any scenario to open the full stay plan, exact working estimate, and trade-offs.</p>
+        <div className="scenario-grid" role="radiogroup" aria-label="Lodging scenarios">
+          {lodgingScenarios.map((scenario) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={selectedScenario.id === scenario.id}
+              className={`scenario-tile ${selectedScenario.id === scenario.id ? 'selected' : ''}`}
+              key={scenario.id}
+              onClick={() => chooseScenario(scenario.id)}
+            >
+              <span>{scenario.eyebrow}</span>
+              <strong>${scenario.total.toLocaleString()}</strong>
+              <p>{scenario.description}</p>
+              <div><StatusPill tone={scenario.tone}>{scenario.status}</StatusPill><b>{selectedScenario.id === scenario.id ? 'Viewing plan' : 'View plan'}</b></div>
+            </button>
+          ))}
+        </div>
+
+        <article className="scenario-detail" aria-live="polite">
+          <header>
+            <div><span className="scenario-kicker"><Sparkles size={14} />Selected plan</span><h2>{selectedScenario.title}</h2><p>{selectedScenario.description}</p></div>
+            <StatusPill tone={selectedScenario.tone}>{selectedScenario.status}</StatusPill>
+          </header>
+          <div className="scenario-summary">
+            <div><CalendarRange /><span>Trip stay<strong>7 nights</strong></span></div>
+            <div><Users /><span>Group total<strong>${selectedScenario.total.toLocaleString()}</strong></span></div>
+            <div><BedDouble /><span>Per traveler<strong>${selectedScenario.perPerson.toLocaleString()}</strong></span></div>
+            <div><Check /><span>Budget buffer<strong>${selectedScenario.buffer.toLocaleString()}</strong></span></div>
+          </div>
+          <div className="scenario-stays">
+            {selectedScenario.segments.map((segment, index) => (
+              <div className="scenario-stay" key={`${selectedScenario.id}-${segment.dates}`}>
+                <span className="stay-number">{index + 1}</span>
+                <div><small>{segment.dates} · {segment.town}</small><strong>{segment.property}</strong><p>{segment.setup} · {segment.note}</p></div>
+                <b>${segment.estimate.toLocaleString()}</b>
+              </div>
+            ))}
+          </div>
+          <SeeMoreButton expanded={showScenarioDetails} onClick={() => setShowScenarioDetails((value) => !value)} moreLabel="See full costs and trade-offs" lessLabel="Hide full costs and trade-offs" />
+          {showScenarioDetails ? (
+            <div className="scenario-expanded">
+              <div className="scenario-costs"><h3>Working estimate</h3>{selectedScenario.costLines.map((line) => <div key={line.label}><span>{line.label}</span><strong>${line.amount.toLocaleString()}</strong></div>)}<div className="scenario-total"><span>Estimated total</span><strong>${selectedScenario.total.toLocaleString()}</strong></div></div>
+              <div><h3>Why choose it</h3><ul>{selectedScenario.highlights.map((item) => <li key={item}><Check />{item}</li>)}</ul></div>
+              <div><h3>Watch-outs</h3><ul>{selectedScenario.tradeoffs.map((item) => <li key={item}>— {item}</li>)}</ul></div>
+            </div>
+          ) : null}
+          <footer>Planning estimate only · verify rates, taxes, room layouts, and cancellation terms directly.</footer>
+        </article>
+      </section>
       <LodgingCalculator />
     </>
   )

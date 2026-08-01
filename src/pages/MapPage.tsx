@@ -13,13 +13,13 @@ export function MapPage() {
   const [selected, setSelected] = useState<MapLocation>(mapLocations[1])
   const visible = useMemo(() => category === 'All' ? mapLocations : mapLocations.filter((item) => item.category === category), [category])
   const select = useCallback((location: MapLocation) => setSelected(location), [])
-  const directions = `https://www.google.com/maps/search/?api=1&query=${selected.coordinates.join(',')}`
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${selected.coordinates.join(',')}`
   return (
     <>
       <PageHeader title="Trip map" subtitle="Lodging, dining, activities, shuttles, scenic stops, and the airport" />
       <div className="map-layout">
         <aside className="map-sidebar"><div className="map-filter"><span>Show on map</span>{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}><i />{item}<b>{item === 'All' ? mapLocations.length : mapLocations.filter((location) => location.category === item).length}</b></button>)}</div><div className="map-location-list">{visible.map((item) => <button key={item.id} className={selected.id === item.id ? 'active' : ''} onClick={() => setSelected(item)}><MapPin /><span><strong>{item.name}</strong><small>{item.day} · {item.note}</small></span></button>)}</div></aside>
-        <div className="map-canvas"><FullMap locations={visible} onSelect={select} /><article className="map-detail"><div className="map-detail-icon"><LocateFixed /></div><div><StatusPill tone="blue">{selected.category}</StatusPill><h2>{selected.name}</h2><p>{selected.note} · {selected.day}</p></div><a className="button secondary" href={directions} target="_blank" rel="noopener noreferrer">Open directions<ExternalLink size={14} /></a></article></div>
+        <div className="map-canvas"><FullMap locations={visible} onSelect={select} /><article className="map-detail"><div className="map-detail-icon"><LocateFixed /></div><div><StatusPill tone="blue">{selected.category}</StatusPill><h2>{selected.name}</h2><p>{selected.note} · {selected.day}</p></div><a className="button secondary" href={googleMapsUrl} target="_blank" rel="noopener noreferrer">Open in Google Maps<ExternalLink size={14} /></a></article></div>
       </div>
     </>
   )
