@@ -130,7 +130,7 @@ export function BookingPage() {
     setError('')
     try {
       const client = await getSupabaseClient()
-      if (!client) throw new Error('Live checks need the Supabase project settings on this deployment.')
+      if (!client) throw new Error('Live booking checks are not connected on this deployment yet.')
       const { data, error: functionError } = await client.functions.invoke('booking-readiness', {
         body: { force: true },
       })

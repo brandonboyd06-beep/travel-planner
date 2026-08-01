@@ -1,6 +1,7 @@
 import { AppShell } from './components/AppShell'
 import { usePathname } from './components/AppLink'
 import { CollaborationProvider } from './context/CollaborationContext'
+import { ItineraryProvider } from './context/ItineraryContext'
 import { ActivitiesPage } from './pages/ActivitiesPage'
 import { BudgetPage } from './pages/BudgetPage'
 import { BookingPage } from './pages/BookingPage'
@@ -21,9 +22,11 @@ export default function App() {
   }
   return (
     <CollaborationProvider>
-      <AppShell>
-        {pages[pathname] ?? <OverviewPage />}
-      </AppShell>
+      <ItineraryProvider>
+        <AppShell>
+          {pages[pathname] ?? <OverviewPage />}
+        </AppShell>
+      </ItineraryProvider>
     </CollaborationProvider>
   )
 }

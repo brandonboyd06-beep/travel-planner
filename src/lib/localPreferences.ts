@@ -5,6 +5,7 @@ export const cloudPreferenceKeys = [
   'overview-checklist',
   'booking-progress',
   'optional-days',
+  'itinerary-plan-v1',
   'preferred-lodging',
   'lodging-scenario',
   'budget-estimates',

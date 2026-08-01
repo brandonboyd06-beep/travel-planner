@@ -1,7 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import { Check, Cloud, HardDrive, LoaderCircle, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
+import { Check, Cloud, Copy, HardDrive, LoaderCircle, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { useCollaboration } from '../context/collaboration'
 import { Button } from './ui'
+
+function CollaborationBrand({ shared = false }: { shared?: boolean }) {
+  return (
+    <div className={`collaboration-brand ${shared ? 'shared' : ''}`}>
+      <img src="/brand/mt-travel-logo-320.jpg" alt="" />
+      <div><strong>MT Travel</strong><span>{shared ? 'Shared trip workspace' : 'Private group planning'}</span></div>
+    </div>
+  )
+}
 
 export function CollaborationStatusButton() {
   const { openModal, status, trip, user } = useCollaboration()
@@ -10,6 +19,7 @@ export function CollaborationStatusButton() {
   return (
     <button
       aria-label={cloudActive ? 'Manage shared trip' : 'Open collaboration options'}
+      aria-controls="collaboration-dialog"
       className={`collaboration-status ${cloudActive ? 'cloud' : ''}`}
       onClick={openModal}
       type="button"
@@ -18,6 +28,28 @@ export function CollaborationStatusButton() {
         ? <LoaderCircle className="spin" size={15} />
         : cloudActive ? <Cloud size={15} /> : <HardDrive size={15} />}
       <span>{cloudActive ? 'Shared trip' : 'Local only'}</span>
+    </button>
+  )
+}
+
+export function InviteTripButton() {
+  const { configured, openModal, trip, user } = useCollaboration()
+  const canInvite = !user || !trip || trip.role === 'owner'
+
+  if (!configured || !canInvite) return null
+
+  const openInvite = () => {
+    openModal()
+    window.setTimeout(() => {
+      const targetId = user && trip ? 'trip-invite-email' : 'collaboration-email'
+      document.getElementById(targetId)?.focus()
+    }, 0)
+  }
+
+  return (
+    <button className="invite-trip-button" type="button" onClick={openInvite} aria-controls="collaboration-dialog">
+      <UserPlus size={16} />
+      <span>Invite</span>
     </button>
   )
 }
@@ -45,6 +77,8 @@ export function CollaborationModal() {
   const [inviteName, setInviteName] = useState('')
   const [message, setMessage] = useState('')
   const [formError, setFormError] = useState('')
+  const [readyInvite, setReadyInvite] = useState<{ email: string; name: string } | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const submitAuth = async (event: FormEvent) => {
     event.preventDefault()
@@ -52,7 +86,7 @@ export function CollaborationModal() {
     setMessage('')
     try {
       await sendMagicLink(email, displayName)
-      setMessage('Magic link sent. Open it on this device to connect your local trip choices.')
+      setMessage('Your MT Travel sign-in link is on its way. Open it on this device to connect your local trip choices.')
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : 'Unable to send the sign-in link.')
     }
@@ -62,13 +96,34 @@ export function CollaborationModal() {
     event.preventDefault()
     setFormError('')
     setMessage('')
+    setReadyInvite(null)
+    setLinkCopied(false)
+    const normalizedEmail = inviteEmail.trim().toLowerCase()
+    const normalizedName = inviteName.trim()
     try {
-      await inviteMember(inviteEmail, inviteName)
+      await inviteMember(normalizedEmail, normalizedName)
       setInviteEmail('')
       setInviteName('')
-      setMessage('Collaborator added. Send them this site link and have them sign in with that email.')
+      setReadyInvite({ email: normalizedEmail, name: normalizedName })
+      setMessage('Invite ready. Share this MT Travel site link with them; they can join with that email.')
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : 'Unable to add this collaborator.')
+    }
+  }
+
+  const inviteLink = typeof window === 'undefined' ? '' : `${window.location.origin}/`
+  const inviteEmailHref = readyInvite ? `mailto:${encodeURIComponent(readyInvite.email)}?${new URLSearchParams({
+    subject: 'Join our Banff trip on MT Travel',
+    body: `Hi${readyInvite.name ? ` ${readyInvite.name}` : ''},\n\nYou’re invited to help plan our Banff trip in MT Travel.\n\nOpen ${inviteLink} and sign in with ${readyInvite.email} so the shared trip appears automatically.\n\nSee you in the Rockies!`,
+  }).toString()}` : ''
+
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink)
+      setLinkCopied(true)
+      setFormError('')
+    } catch {
+      setFormError('Copy did not work in this browser. Use the email invite button or copy the link from the address bar.')
     }
   }
 
@@ -78,46 +133,47 @@ export function CollaborationModal() {
         <aside className="local-save-notice" aria-live="polite">
           <div className="local-save-icon"><HardDrive size={18} /></div>
           <div><strong>Saved on this device</strong><span>No account needed. Want the group to edit together?</span></div>
-          <button type="button" onClick={openModal}>Collaborate</button>
+          <button type="button" onClick={openModal}>Invite the crew</button>
           <button className="notice-close" type="button" onClick={dismissNotice} aria-label="Dismiss local save message"><X size={15} /></button>
         </aside>
       ) : null}
 
       {modalOpen ? (
-        <div className="collaboration-layer" role="dialog" aria-modal="true" aria-labelledby="collaboration-title">
+        <div id="collaboration-dialog" className="collaboration-layer" role="dialog" aria-modal="true" aria-labelledby="collaboration-title">
           <button className="collaboration-scrim" type="button" onClick={closeModal} aria-label="Close collaboration dialog" />
           <section className="collaboration-modal">
             <button className="modal-close" type="button" onClick={closeModal} aria-label="Close collaboration dialog"><X size={18} /></button>
 
             {!user || !trip ? (
               <>
-                <div className="modal-icon"><Users /></div>
-                <span className="modal-eyebrow">Optional cloud collaboration</span>
-                <h2 id="collaboration-title">Plan together when you’re ready</h2>
-                <p className="modal-intro">Everything works without an account and stays in this browser. Create an account only if you want the group to share edits.</p>
+                <CollaborationBrand />
+                <span className="modal-eyebrow">MT Travel group planning</span>
+                <h2 id="collaboration-title">Bring the trip crew together</h2>
+                <p className="modal-intro">Keep planning on this device with no account required. Sign in or create an MT Travel account only when you want the group to share edits.</p>
                 <div className="storage-choice-grid">
-                  <article><HardDrive /><div><strong>Local by default</strong><span>Private to this device. No login, tracking, or cloud writes.</span></div><Check /></article>
-                  <article><Cloud /><div><strong>Shared when invited</strong><span>Sync notes, lists, lodging, itinerary choices, and budget estimates.</span></div></article>
+                  <article><HardDrive /><div><strong>Guest mode is ready</strong><span>Private to this device. No account and no shared writes.</span></div><Check /></article>
+                  <article><Users /><div><strong>Invite when ready</strong><span>Share notes, lists, lodging, itinerary choices, and budget estimates.</span></div></article>
                 </div>
 
                 {configured ? (
                   <form className="collaboration-form" onSubmit={submitAuth}>
-                    <label><span>Your name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Brandon" autoComplete="name" /></label>
-                    <label><span>Email</span><input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete="email" required /></label>
+                    <div className="collaboration-form-heading"><strong>Sign in or create your account</strong><span>We’ll email you a secure, one-time link. No password needed.</span></div>
+                    <label htmlFor="collaboration-name"><span>Your name</span><input id="collaboration-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Brandon" autoComplete="name" /></label>
+                    <label htmlFor="collaboration-email"><span>Email</span><input id="collaboration-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete="email" required /></label>
                     <Button className="primary" disabled={status === 'connecting'} type="submit">
                       {status === 'connecting' ? <LoaderCircle className="spin" size={16} /> : <Mail size={16} />}
-                      Send secure magic link
+                      Email my MT Travel sign-in link
                     </Button>
-                    <small><ShieldCheck size={13} />No password required. Supabase Auth protects shared trip data.</small>
+                    <small><ShieldCheck size={13} />Secure password-free sign-in. Your private trip stays yours.</small>
                   </form>
                 ) : (
-                  <div className="collaboration-unavailable"><HardDrive /><div><strong>Local mode is active</strong><span>Cloud collaboration has not been configured for this deployment.</span></div></div>
+                  <div className="collaboration-unavailable"><HardDrive /><div><strong>Guest mode is active</strong><span>Group planning is not available in this preview, but your trip still saves on this device.</span></div></div>
                 )}
               </>
             ) : (
               <>
-                <div className="modal-icon cloud"><Cloud /></div>
-                <span className="modal-eyebrow">Cloud sync active</span>
+                <CollaborationBrand shared />
+                <span className="modal-eyebrow">MT Travel · Shared trip</span>
                 <h2 id="collaboration-title">{trip.name}</h2>
                 <p className="modal-intro">Signed in as {user.email}. Changes are kept locally and synced to this shared trip.</p>
                 <div className="sync-summary"><span><Check />Synced</span><span>{trip.role}</span></div>
@@ -133,14 +189,26 @@ export function CollaborationModal() {
                 </div>
 
                 {trip.role === 'owner' ? (
-                  <form className="invite-form" onSubmit={submitInvite}>
-                    <div><UserPlus size={17} /><div><strong>Add a collaborator</strong><span>They join after signing in with the same email.</span></div></div>
-                    <div className="invite-fields">
-                      <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Name" aria-label="Collaborator name" />
-                      <input value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Email address" aria-label="Collaborator email" type="email" required />
-                      <Button className="secondary" type="submit">Add</Button>
-                    </div>
-                  </form>
+                  <>
+                    <form className="invite-form" onSubmit={submitInvite}>
+                      <div><UserPlus size={17} /><div><strong>Invite a trip member</strong><span>Add their email, then share this MT Travel link. They’ll join after secure sign-in.</span></div></div>
+                      <div className="invite-fields">
+                        <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Name" aria-label="Collaborator name" autoComplete="name" />
+                        <input id="trip-invite-email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Email address" aria-label="Collaborator email" type="email" autoComplete="email" required />
+                        <Button className="primary" type="submit"><UserPlus size={15} />Invite member</Button>
+                      </div>
+                    </form>
+                    {readyInvite ? (
+                      <section className="invite-share-card" aria-label={`Share invite with ${readyInvite.name || readyInvite.email}`}>
+                        <div><Check /><span><strong>{readyInvite.name || readyInvite.email} is on the guest list</strong><small>Send the MT Travel link and remind them to sign in with {readyInvite.email}.</small></span></div>
+                        <div className="invite-share-actions">
+                          <Button className="secondary" type="button" onClick={() => void copyInviteLink()}><Copy size={14} />{linkCopied ? 'Link copied' : 'Copy trip link'}</Button>
+                          <a className="button primary" href={inviteEmailHref}><Mail size={14} />Email invite</a>
+                        </div>
+                        <code>{inviteLink}</code>
+                      </section>
+                    ) : null}
+                  </>
                 ) : null}
 
                 <Button className="ghost modal-signout" type="button" onClick={() => void signOut()}>Sign out · keep local copy</Button>

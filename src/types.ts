@@ -1,6 +1,22 @@
 export type Status = 'Not started' | 'Researching' | 'Ready to book' | 'Booked'
 
+export type ItineraryStopKind = 'travel' | 'activity' | 'scenic' | 'meal' | 'lodging' | 'other'
+export type ItineraryStopPriority = 'fixed' | 'core' | 'optional'
+
+export interface ItineraryStop {
+  id: string
+  name: string
+  kind: ItineraryStopKind
+  priority: ItineraryStopPriority
+  mapsQuery: string
+  coordinates?: [number, number]
+  note?: string
+  source: 'seed' | 'manual' | 'miller'
+  sourceUrl?: string
+}
+
 export interface ItineraryDay {
+  id: string
   day: string
   date: number
   month: string
@@ -10,12 +26,40 @@ export interface ItineraryDay {
   imageAlt: string
   tone: 'blue' | 'green' | 'amber'
   label?: string
-  core: string[]
+  stops: ItineraryStop[]
   optional: string[]
   backup: string
   logistics: string
   dining: string[]
   coordinates: [number, number]
+}
+
+export interface ItineraryPlan {
+  schemaVersion: 1
+  revision: number
+  updatedAt: string
+  days: ItineraryDay[]
+  appliedProposalIds: string[]
+}
+
+export type ItineraryStopPatch = Partial<Pick<ItineraryStop, 'name' | 'kind' | 'priority' | 'mapsQuery' | 'note' | 'sourceUrl'>> & {
+  coordinates?: [number, number] | null
+}
+
+export type ItineraryOperation =
+  | { type: 'add_stop'; dayId: string; afterStopId?: string; stop: Omit<ItineraryStop, 'id' | 'source'> }
+  | { type: 'update_stop'; dayId: string; stopId: string; patch: ItineraryStopPatch }
+  | { type: 'move_stop'; stopId: string; fromDayId: string; toDayId: string; afterStopId?: string }
+  | { type: 'remove_stop'; dayId: string; stopId: string }
+
+export interface ItineraryProposal {
+  id: string
+  baseRevision: number
+  summary: string
+  rationale: string
+  operations: ItineraryOperation[]
+  warnings: string[]
+  sources: Array<{ title: string; url: string }>
 }
 
 export interface Lodging {

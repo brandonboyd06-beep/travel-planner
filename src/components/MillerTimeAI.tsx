@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowUp, Cloud, HardDrive, RotateCcw, Sparkles, X } from 'lucide-react'
-import { usePathname } from './AppLink'
+import { navigate, usePathname } from './AppLink'
 import { readLocalPreferences } from '../lib/localPreferences'
 import { getSupabaseClient } from '../lib/supabase'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { useCollaboration } from '../context/collaboration'
+import { useItinerary } from '../context/itinerary'
+import { itineraryForChat } from '../lib/itineraryPlan'
 
 interface SourceLink {
   title: string
@@ -25,6 +27,7 @@ const welcome: ChatMessage = {
 }
 
 const suggestions = [
+  'Add the Plain of Six Glaciers Tea House where it makes the most sense.',
   'Which brewery fits our itinerary best, and what IPA should I order?',
   'Which lodging scenario should we choose?',
   'What should we do if Tuesday has bad weather?',
@@ -68,6 +71,7 @@ function parseSources(value: unknown): SourceLink[] {
 export function MillerTimeAI() {
   const pathname = usePathname()
   const { user, trip, openModal } = useCollaboration()
+  const { plan } = useItinerary()
   const [open, setOpen] = useState(false)
   const [localMessages, setLocalMessages] = useLocalStorage<ChatMessage[]>('miller-time-ai-chat', [welcome])
   const [cloudMessages, setCloudMessages] = useState<ChatMessage[]>([welcome])
@@ -152,13 +156,15 @@ export function MillerTimeAI() {
 
     try {
       const client = await getSupabaseClient()
-      if (!client) throw new Error('Miller Time AI needs the Supabase project settings before it can connect.')
+      if (!client) throw new Error('Miller Time AI’s secure connection is not configured on this deployment yet.')
+      const preferences = readLocalPreferences()
+      delete preferences['itinerary-plan-v1']
 
       const { data, error: functionError } = await client.functions.invoke('miller-time-ai', {
         body: {
           messages: nextMessages.filter((message) => message.id !== 'welcome').map(({ role, content: messageContent }) => ({ role, content: messageContent })),
           tripId: cloudMemory ? trip?.id : undefined,
-          pageContext: { page: pageNames[pathname] ?? pathname, preferences: readLocalPreferences() },
+          pageContext: { page: pageNames[pathname] ?? pathname, preferences, currentItinerary: itineraryForChat(plan) },
         },
       })
 
@@ -224,6 +230,7 @@ export function MillerTimeAI() {
             {cloudMemory
               ? <small><Cloud /> Private cloud memory is on</small>
               : <small><HardDrive /> Saved on this device only · <button type="button" onClick={openModal}>Sign in to remember across devices</button></small>}
+            <button className="miller-change-link" type="button" onClick={() => { if (draft.trim()) window.sessionStorage.setItem('banff-2026:itinerary-idea', draft.trim()); setOpen(false); navigate('/itinerary') }}><Sparkles />Plan an itinerary change</button>
           </span>
         </div>
         <div className="miller-messages" aria-live="polite">

@@ -14,7 +14,12 @@ export function navigate(href: string, replace = false) {
   if (replace) window.history.replaceState({}, '', href)
   else window.history.pushState({}, '', href)
   window.dispatchEvent(new PopStateEvent('popstate'))
-  window.scrollTo({ top: 0, behavior: 'instant' })
+  const hash = new URL(href, window.location.origin).hash
+  if (hash) {
+    window.requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }))
+  } else {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+  }
 }
 
 export function AppLink({ href, exact = false, className = '', onClick, ...props }: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { href: string; exact?: boolean }) {
