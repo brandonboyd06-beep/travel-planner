@@ -34,9 +34,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 
 Use a publishable key only. Never expose a Supabase secret or service-role key in Vite or Netlify browser variables. Add the deployed Netlify origin to Supabase Auth's allowed redirect URLs so magic links can return to the app.
 
-The floating Miller Time AI virtual travel agent runs in `supabase/functions/miller-time-ai/`. The Book & Reserve page uses `supabase/functions/booking-readiness/` to refresh current official reservation guidance while keeping date-specific inventory claims conservative. Both functions read `ANTHROPIC_API_KEY` from the Supabase project's Edge Function secrets, so the key is never duplicated in Netlify or bundled into the browser app. The functions accept the project's publishable key, which allows account-free visitors while rejecting requests that are not made through a configured Supabase client.
+The floating Miller Time AI virtual travel agent runs in `supabase/functions/miller-time-ai/` and reads `OPENAI_API_KEY` from the Supabase project's Edge Function secrets. It defaults to `gpt-5.6-terra`, uses the Responses API with live web search, and can return review-only itinerary proposals inside the regular chat. The Book & Reserve page uses `supabase/functions/booking-readiness/` to refresh current official reservation guidance and still reads `ANTHROPIC_API_KEY`. Neither provider key is duplicated in Netlify or bundled into the browser app. The functions accept the project's publishable key, which allows account-free visitors while rejecting requests that are not made through a configured Supabase client.
 
-For local Edge Function development, use `supabase functions serve miller-time-ai --env-file <ignored-env-file>` or `supabase functions serve booking-readiness --env-file <ignored-env-file>`. Never commit the Anthropic key. The optional Supabase secret `ANTHROPIC_MODEL` can override the default model without changing code.
+For local Edge Function development, use `supabase functions serve miller-time-ai --env-file <ignored-env-file>` or `supabase functions serve booking-readiness --env-file <ignored-env-file>`. Never commit either provider key. Optional Supabase secrets `OPENAI_MODEL` and `OPENAI_REASONING_EFFORT` can override Miller Time's defaults; `ANTHROPIC_MODEL` still controls the booking-readiness function.
 
 ## Content and architecture
 
