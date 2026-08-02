@@ -16,6 +16,7 @@ export interface TripMember {
 }
 
 export type SyncStatus = 'local' | 'connecting' | 'syncing' | 'synced' | 'error'
+export type AuthMode = 'signin' | 'signup'
 
 export interface CollaborationContextValue {
   configured: boolean
@@ -29,7 +30,7 @@ export interface CollaborationContextValue {
   openModal: () => void
   closeModal: () => void
   dismissNotice: () => void
-  sendMagicLink: (email: string, displayName: string) => Promise<void>
+  sendMagicLink: (email: string, displayName: string, mode: AuthMode) => Promise<void>
   inviteMember: (email: string, displayName: string) => Promise<void>
   signOut: () => Promise<void>
 }

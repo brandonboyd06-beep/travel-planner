@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_MODEL = 'gpt-5.6-terra'
 const OPENAI_TIMEOUT_MS = 55_000
+const OPENAI_REPAIR_TIMEOUT_MS = 45_000
 const MAX_BODY_BYTES = 48_000
 const MAX_CHANGE_REQUEST_LENGTH = 1_200
 const MAX_ITINERARY_BYTES = 22_000
@@ -138,6 +139,12 @@ interface OpenAIResponse {
   output?: OpenAIOutputItem[]
   incomplete_details?: { reason?: string }
   error?: { type?: string; code?: string; message?: string }
+}
+
+interface OpenAIInvocationOptions {
+  webSearch?: boolean
+  timeoutMs?: number
+  reasoningEffort?: 'low' | 'medium'
 }
 
 interface CompactItineraryStop {
@@ -1124,9 +1131,12 @@ async function invokeOpenAI(
   instructions: string,
   input: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxOutputTokens: number,
+  options: OpenAIInvocationOptions = {},
 ) {
+  const timeoutMs = options.timeoutMs ?? OPENAI_TIMEOUT_MS
+  const useWebSearch = options.webSearch ?? true
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     return await fetch(OPENAI_RESPONSES_URL, {
       method: 'POST',
@@ -1138,14 +1148,16 @@ async function invokeOpenAI(
       body: JSON.stringify({
         model: Deno.env.get('OPENAI_MODEL') || DEFAULT_MODEL,
         store: false,
-        reasoning: { effort: Deno.env.get('OPENAI_REASONING_EFFORT') || 'low' },
+        reasoning: { effort: options.reasoningEffort || Deno.env.get('OPENAI_REASONING_EFFORT') || 'low' },
         max_output_tokens: maxOutputTokens,
         instructions,
         input,
-        tools: [webSearchTool],
-        tool_choice: 'auto',
-        max_tool_calls: 3,
-        include: ['web_search_call.action.sources'],
+        ...(useWebSearch ? {
+          tools: [webSearchTool],
+          tool_choice: 'auto',
+          max_tool_calls: 3,
+          include: ['web_search_call.action.sources'],
+        } : {}),
         text: {
           verbosity: 'low',
           format: {
@@ -1168,6 +1180,81 @@ function openAIErrorCode(result: OpenAIResponse) {
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function looksLikeBroadRewriteRequest(value: string) {
+  const explicitRewrite = /\b(?:rework|rewrite|rebuild|overhaul|replan|redo|replace|restructure)\b/i.test(value)
+    && /\b(?:itinerary|trip|schedule|portion|segment|days?|stay|overnights?|bases?|route)\b/i.test(value)
+  const overnightRouteChange = /\b(?:add|include|fit|need|want|visit|drive|trip)\b/i.test(value)
+    && /\b(?:overnight|night\s+(?:in|there)|stay\s+in|jasper)\b/i.test(value)
+  return explicitRewrite || overnightRouteChange
+}
+
+function focusedBroadRewriteRequest(messages: ChatMessage[], question: string) {
+  if (looksLikeBroadRewriteRequest(question)) return question
+  if (!/^\s*(?:yes[, ]+)?(?:please\s+)?(?:try|retry|redo|rebuild)(?:\s+(?:that|it|the\s+(?:plan|rewrite)))?\s*(?:again)?[.!]?\s*$/i.test(question)) {
+    return null
+  }
+
+  return [...messages.slice(0, -1)]
+    .reverse()
+    .find((message) => message.role === 'user' && looksLikeBroadRewriteRequest(message.content))
+    ?.content ?? null
+}
+
+async function repairAssistantProposal(
+  apiKey: string,
+  requestText: string,
+  invalidOutput: string,
+  validationCode: string,
+  itinerary: CompactItinerary,
+  revision: number,
+  trustedSources: SourceLink[],
+) {
+  const repairInstructions = `
+You are the deterministic repair stage for a travel-planning application. Return one corrected, review-only itinerary proposal for the same traveler request. Do not add new goals, ask the traveler to retry, or claim anything was applied. The previous draft already passed the JSON schema but failed the application's route and itinerary safety checks.
+
+${assistantResponseInstructions}
+
+REPAIR RULES
+- Use resolution proposal and exactly one replace_days operation for a multi-day, overnight-base, or route rewrite.
+- Correct the named validation failure while preserving the traveler's requested priorities.
+- Use only existing interior day IDs from the supplied itinerary.
+- Include every changed day needed to connect the route back to the unchanged itinerary.
+- Use fixed priority only for travel, shuttle, or lodging stops.
+- Do not use web search. Reuse only facts in the request, current itinerary, and rejected draft.
+`.trim()
+  const repairMessages: ChatMessage[] = [{
+    role: 'user',
+    content: `Traveler change request:\n${requestText}\n\nCurrent itinerary revision: ${revision}\nValidation rejection code: ${validationCode}\n\n<untrusted_rejected_draft>\n${invalidOutput.slice(0, 24_000)}\n</untrusted_rejected_draft>\n\n<current_itinerary_data>\n${JSON.stringify(itinerary)}\n</current_itinerary_data>`,
+  }]
+
+  try {
+    const response = await invokeOpenAI(apiKey, repairInstructions, repairMessages, 6_000, {
+      webSearch: false,
+      timeoutMs: OPENAI_REPAIR_TIMEOUT_MS,
+      reasoningEffort: 'medium',
+    })
+    const result = await response.json().catch(() => ({})) as OpenAIResponse
+    if (!response.ok || result.status === 'incomplete') {
+      console.error('OpenAI proposal repair failed', response.status, result.incomplete_details?.reason || openAIErrorCode(result))
+      return null
+    }
+
+    const output = extractAnswer(result)
+    let structured: unknown = null
+    try { structured = JSON.parse(output) } catch { /* handled below */ }
+    const parsed = parseAssistantOutput(structured, itinerary, revision, trustedSources)
+    if (!parsed?.proposal) {
+      console.error('OpenAI proposal repair validation failed', assistantOutputValidationReason(structured, itinerary, revision))
+      return null
+    }
+    console.log('OpenAI proposal repaired', validationCode)
+    return parsed
+  } catch (error) {
+    console.error('OpenAI proposal repair error', isAbortError(error) ? 'timeout' : error instanceof Error ? error.message : 'unknown')
+    return null
+  }
 }
 
 export default {
@@ -1294,6 +1381,7 @@ export default {
           `${systemPrompt}\n\n${assistantResponseInstructions}\n\nThe traveler used the dedicated itinerary-change shortcut, so resolve a concrete request as a proposal whenever it can be safely reviewed.`,
           proposalMessages,
           6_000,
+          { webSearch: false, reasoningEffort: 'medium' },
         )
         const result = await response.json().catch(() => ({})) as OpenAIResponse
 
@@ -1319,17 +1407,20 @@ export default {
         let structured: unknown = null
         try { structured = JSON.parse(output) } catch { /* handled below */ }
         const modelSources = extractSources(result)
-        const parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
+        let parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
         if (!parsed) {
           const reason = assistantOutputValidationReason(structured, itinerary, revision)
           console.error('OpenAI proposal validation failed', reason, result.status || 'unknown')
-          return json(200, {
-            answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Please try the same request once more so I can rebuild a clean comparison.',
-            sources: modelSources,
-            resolution: 'needs_clarification',
-            validationCode: reason,
-            searchedWeb: searchedWeb(result),
-          })
+          parsed = await repairAssistantProposal(apiKey, changeRequest, output, reason, itinerary, revision, modelSources)
+          if (!parsed) {
+            return json(200, {
+              answer: 'I could not turn that route into a safe day-by-day comparison. Nothing changed. Please name any dates that must stay fixed, then ask me to plan it again.',
+              sources: modelSources,
+              resolution: 'needs_clarification',
+              validationCode: reason,
+              searchedWeb: searchedWeb(result),
+            })
+          }
         }
 
         const sources = mergeProposalSources(modelSources, parsed.proposal)
@@ -1399,15 +1490,12 @@ export default {
       && (suppliedRevision as number) <= 2_147_483_647
       ? suppliedRevision as number
       : 0
-    const broadRewriteRequest = Boolean(
-      itinerary
-      && /\b(?:rework|rewrite|rebuild|overhaul|replan|redo|replace|restructure)\b/i.test(question)
-      && /\b(?:itinerary|trip|schedule|portion|segment|days?|stay|overnights?|bases?|route)\b/i.test(question),
-    )
+    const broadChangeRequest = itinerary ? focusedBroadRewriteRequest(messages, question) : null
+    const broadRewriteRequest = Boolean(broadChangeRequest)
     const modelMessages: ChatMessage[] = broadRewriteRequest
       ? [{
           role: 'user',
-          content: `Traveler change request:\n${question}\n\nCurrent itinerary revision: ${revision}\n<current_itinerary_data>\n${JSON.stringify(itinerary)}\n</current_itinerary_data>`,
+          content: `Traveler change request:\n${broadChangeRequest}\n\nCurrent itinerary revision: ${revision}\n<current_itinerary_data>\n${JSON.stringify(itinerary)}\n</current_itinerary_data>`,
         }]
       : messages.map((message, index) => index === messages.length - 1
         ? {
@@ -1425,6 +1513,7 @@ export default {
         responseInstructions,
         modelMessages,
         broadRewriteRequest ? 6_000 : 5_400,
+        broadRewriteRequest ? { webSearch: false, reasoningEffort: 'medium' } : {},
       )
       const result = await response.json().catch(() => ({})) as OpenAIResponse
 
@@ -1451,11 +1540,19 @@ export default {
       let validationCode: string | undefined
       if (!parsed) {
         const reason = assistantOutputValidationReason(structured, itinerary, revision)
-        validationCode = reason
         console.error('OpenAI chat validation failed', reason, result.status || 'unknown')
-        parsed = {
-          answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Ask me to try that rewrite once more and I’ll rebuild a clean comparison.',
-          resolution: 'needs_clarification',
+        const attemptedProposal = broadRewriteRequest || (isRecord(structured) && structured.resolution === 'proposal')
+        const repaired = attemptedProposal && itinerary
+          ? await repairAssistantProposal(apiKey, broadChangeRequest || question, output, reason, itinerary, revision, modelSources)
+          : null
+        if (repaired) {
+          parsed = repaired
+        } else {
+          validationCode = reason
+          parsed = {
+            answer: 'I could not turn that route into a safe day-by-day comparison. Nothing changed. Please name any dates that must stay fixed, then ask me to plan it again.',
+            resolution: 'needs_clarification',
+          }
         }
       }
 

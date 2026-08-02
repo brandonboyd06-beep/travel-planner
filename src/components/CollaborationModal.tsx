@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { Check, Cloud, Copy, HardDrive, LoaderCircle, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
+import { Check, Cloud, Copy, HardDrive, LoaderCircle, LogIn, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { useCollaboration } from '../context/collaboration'
+import type { AuthMode } from '../context/collaboration'
 import { Button } from './ui'
 
 function CollaborationBrand({ shared = false }: { shared?: boolean }) {
@@ -18,16 +19,16 @@ export function CollaborationStatusButton() {
 
   return (
     <button
-      aria-label={cloudActive ? 'Manage shared trip' : 'Open collaboration options'}
+      aria-label={cloudActive ? 'Manage shared trip' : 'Sign in to MT Travel'}
       aria-controls="collaboration-dialog"
-      className={`collaboration-status ${cloudActive ? 'cloud' : ''}`}
+      className={`collaboration-status ${cloudActive ? 'cloud' : 'signin'}`}
       onClick={openModal}
       type="button"
     >
       {status === 'connecting' || status === 'syncing'
         ? <LoaderCircle className="spin" size={15} />
-        : cloudActive ? <Cloud size={15} /> : <HardDrive size={15} />}
-      <span>{cloudActive ? 'Shared trip' : 'Local only'}</span>
+        : cloudActive ? <Cloud size={15} /> : <LogIn size={15} />}
+      <span>{cloudActive ? 'Shared trip' : 'Sign in'}</span>
     </button>
   )
 }
@@ -73,6 +74,7 @@ export function CollaborationModal() {
   } = useCollaboration()
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [message, setMessage] = useState('')
@@ -85,10 +87,15 @@ export function CollaborationModal() {
     setFormError('')
     setMessage('')
     try {
-      await sendMagicLink(email, displayName)
-      setMessage('Your MT Travel sign-in link is on its way. Open it on this device to connect your local trip choices.')
+      await sendMagicLink(email, displayName, authMode)
+      setMessage(authMode === 'signin'
+        ? 'Your MT Travel sign-in link is on its way. Open it on this device to connect your local trip choices.'
+        : 'Your account link is on its way. Open it on this device to finish creating your MT Travel account.')
     } catch (caught) {
-      setFormError(caught instanceof Error ? caught.message : 'Unable to send the sign-in link.')
+      const fallback = authMode === 'signin'
+        ? 'We could not send a sign-in link. Check the email, or choose Create account if this is your first visit.'
+        : 'We could not create that account just now. Please try again.'
+      setFormError(authMode === 'signin' ? fallback : caught instanceof Error && caught.message ? caught.message : fallback)
     }
   }
 
@@ -148,23 +155,29 @@ export function CollaborationModal() {
               <>
                 <CollaborationBrand />
                 <span className="modal-eyebrow">MT Travel group planning</span>
-                <h2 id="collaboration-title">Bring the trip crew together</h2>
-                <p className="modal-intro">Keep planning on this device with no account required. Sign in or create an MT Travel account only when you want the group to share edits.</p>
+                <h2 id="collaboration-title">{authMode === 'signin' ? 'Sign in to MT Travel' : 'Create your MT Travel account'}</h2>
+                <p className="modal-intro">{authMode === 'signin'
+                  ? 'Already have an account? Enter your email and we’ll send a one-time sign-in link. No password needed.'
+                  : 'New to MT Travel? Create an account so the group can share edits. You can still look around without one.'}</p>
                 <div className="storage-choice-grid">
                   <article><HardDrive /><div><strong>Guest mode is ready</strong><span>Private to this device. No account and no shared writes.</span></div><Check /></article>
                   <article><Users /><div><strong>Invite when ready</strong><span>Share notes, lists, lodging, itinerary choices, and budget estimates.</span></div></article>
                 </div>
 
                 {configured ? (
-                  <form className="collaboration-form" onSubmit={submitAuth}>
-                    <div className="collaboration-form-heading"><strong>Sign in or create your account</strong><span>We’ll email you a secure, one-time link. No password needed.</span></div>
-                    <label htmlFor="collaboration-name"><span>Your name</span><input id="collaboration-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Brandon" autoComplete="name" /></label>
+                  <form className={`collaboration-form ${authMode}`} onSubmit={submitAuth}>
+                    <div className="auth-mode-switch" role="group" aria-label="Choose sign in or create account">
+                      <button type="button" aria-pressed={authMode === 'signin'} className={authMode === 'signin' ? 'active' : ''} onClick={() => { setAuthMode('signin'); setFormError(''); setMessage('') }}><LogIn size={15} />Sign in</button>
+                      <button type="button" aria-pressed={authMode === 'signup'} className={authMode === 'signup' ? 'active' : ''} onClick={() => { setAuthMode('signup'); setFormError(''); setMessage('') }}><UserPlus size={15} />Create account</button>
+                    </div>
+                    <div className="collaboration-form-heading"><strong>{authMode === 'signin' ? 'Welcome back' : 'Make your account'}</strong><span>{authMode === 'signin' ? 'Use the same email you used before.' : 'Use the email that received the trip invitation.'}</span></div>
+                    {authMode === 'signup' ? <label htmlFor="collaboration-name"><span>Your name</span><input id="collaboration-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Alex" autoComplete="name" /></label> : null}
                     <label htmlFor="collaboration-email"><span>Email</span><input id="collaboration-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete="email" required /></label>
                     <Button className="primary" disabled={status === 'connecting'} type="submit">
-                      {status === 'connecting' ? <LoaderCircle className="spin" size={16} /> : <Mail size={16} />}
-                      Email my MT Travel sign-in link
+                      {status === 'connecting' ? <LoaderCircle className="spin" size={16} /> : authMode === 'signin' ? <LogIn size={16} /> : <Mail size={16} />}
+                      {authMode === 'signin' ? 'Email me a sign-in link' : 'Create my account'}
                     </Button>
-                    <small><ShieldCheck size={13} />Secure password-free sign-in. Your private trip stays yours.</small>
+                    <small><ShieldCheck size={13} />Secure, password-free email link. Your private trip stays yours.</small>
                   </form>
                 ) : (
                   <div className="collaboration-unavailable"><HardDrive /><div><strong>Guest mode is active</strong><span>Group planning is not available in this preview, but your trip still saves on this device.</span></div></div>

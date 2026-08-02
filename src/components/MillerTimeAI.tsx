@@ -70,6 +70,7 @@ export function MillerTimeAI() {
   const [reviewMessageId, setReviewMessageId] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const pendingRef = useRef(false)
   const comparisonBasesRef = useRef(new Map<string, ItineraryPlan>())
   const cloudMemory = Boolean(user && trip)
   const messages = cloudMemory ? cloudMessages : localMessages
@@ -150,8 +151,9 @@ export function MillerTimeAI() {
 
   const ask = async (question: string) => {
     const content = question.trim()
-    if (!content || pending || memoryLoading) return
+    if (!content || pendingRef.current || memoryLoading) return
 
+    pendingRef.current = true
     const requestedRevision = plan.revision
     const requestedItinerary = compactItinerary(plan)
     const userMessage: ChatMessage = { id: newId(), role: 'user', content }
@@ -201,6 +203,7 @@ export function MillerTimeAI() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Miller Time AI could not answer just now.')
     } finally {
+      pendingRef.current = false
       setPending(false)
     }
   }

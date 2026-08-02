@@ -24,6 +24,7 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
   const [comparisonOpen, setComparisonOpen] = useState(false)
   const [comparisonBase, setComparisonBase] = useState<ItineraryPlan | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pendingRef = useRef(false)
 
   useEffect(() => {
     const queued = window.sessionStorage.getItem('banff-2026:itinerary-idea')
@@ -35,7 +36,8 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
 
   const askMiller = async (request = draft) => {
     const changeRequest = request.trim()
-    if (!changeRequest || pending || !canEdit) return
+    if (!changeRequest || pendingRef.current || !canEdit) return
+    pendingRef.current = true
     const requestedPlan = plan
     const requestedRevision = requestedPlan.revision
     setPending(true)
@@ -71,6 +73,7 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Miller Time could not plan that change.')
     } finally {
+      pendingRef.current = false
       setPending(false)
     }
   }

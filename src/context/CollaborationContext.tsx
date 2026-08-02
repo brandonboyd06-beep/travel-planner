@@ -10,6 +10,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { CollaborationModal } from '../components/CollaborationModal'
 import {
   CollaborationContext,
+  type AuthMode,
   type CollaborationContextValue,
   type SharedTrip,
   type SyncStatus,
@@ -279,7 +280,7 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     }
   }, [trip, user])
 
-  const sendMagicLink = useCallback(async (email: string, displayName: string) => {
+  const sendMagicLink = useCallback(async (email: string, displayName: string, mode: AuthMode) => {
     const client = await getSupabaseClient()
     if (!client) throw new Error('Cloud collaboration is not configured on this deployment.')
 
@@ -288,7 +289,8 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       email: email.trim().toLowerCase(),
       options: {
         emailRedirectTo: window.location.origin,
-        data: { display_name: displayName.trim() || email.split('@')[0] },
+        shouldCreateUser: mode === 'signup',
+        ...(mode === 'signup' ? { data: { display_name: displayName.trim() || email.split('@')[0] } } : {}),
       },
     })
 
