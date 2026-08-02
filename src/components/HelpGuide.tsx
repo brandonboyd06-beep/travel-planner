@@ -62,7 +62,7 @@ const steps: GuideStep[] = [
   },
   {
     title: 'Plan with the group',
-    body: 'You can look around without an account. Tap Sign in if you already have one. Tap Invite to add the group. Pick Create account only if you are new. You can open Help again anytime.',
+    body: 'You can look around without an account. Brandon taps Invite to make your login. Then you tap Sign in with the email and temporary password he sends. Pick your own password when asked. No email link is needed.',
     icon: UserPlus,
   },
 ]

@@ -828,6 +828,9 @@ h1, h2, h3, p { margin-top: 0; }
 .password-field > div > button:hover { background: #eef4fa; color: var(--blue); }
 .collaboration-form .button { grid-column: 1 / -1; }
 .collaboration-form > small { grid-column: 1 / -1; color: #667085; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 8px; }
+.auth-manual-help { grid-column: 1 / -1; margin: 0; padding: 10px; border: 1px solid #d9e5ef; border-radius: 8px; background: #f7fbff; color: #526173; display: flex; align-items: flex-start; gap: 8px; font-size: 9px; line-height: 1.45; }
+.auth-manual-help > svg { flex: 0 0 auto; margin-top: 1px; color: var(--blue); }
+.auth-manual-help strong { color: #26364a; }
 .auth-help-button, .auth-back-button { grid-column: 1 / -1; width: fit-content; min-height: 34px; justify-self: center; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: #0f5bb7; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 9px; font-weight: 750; cursor: pointer; }
 .auth-help-button:hover, .auth-back-button:hover { background: #eef5fd; }
 .collaboration-unavailable { padding: 13px; border-radius: 8px; background: #f3f6f9; display: flex; align-items: center; gap: 10px; color: #526173; }
@@ -847,6 +850,10 @@ h1, h2, h3, p { margin-top: 0; }
 .member-row strong { overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .member-row div span { overflow: hidden; text-overflow: ellipsis; color: #7a8798; font-size: 8px; }
 .member-row small { color: #526173; font-size: 8px; text-transform: capitalize; }
+.member-actions { display: flex !important; align-items: flex-end; gap: 4px !important; }
+.member-actions button { min-height: 28px; padding: 0 7px; border: 1px solid #cbdbe8; border-radius: 6px; background: #f7fbff; color: #0f5bb7; font-size: 8px; font-weight: 750; cursor: pointer; white-space: nowrap; }
+.member-actions button:hover { background: #eaf3ff; }
+.member-actions button:disabled { opacity: .6; cursor: wait; }
 .invite-form { margin-top: 13px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; }
 .invite-form > div:first-child { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
 .invite-form > div:first-child > svg { color: var(--blue); }
@@ -861,6 +868,10 @@ h1, h2, h3, p { margin-top: 0; }
 .invite-share-card > div:first-child span { display: grid; gap: 3px; }
 .invite-share-card strong { color: #0a3e34; font-size: 10px; }
 .invite-share-card small { color: #526173; font-size: 8px; line-height: 1.4; }
+.invite-credentials { margin: 0; padding: 9px 10px; border: 1px solid #dbe5e1; border-radius: 7px; background: rgb(255 255 255 / 80%); display: grid; gap: 7px; }
+.invite-credentials div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.invite-credentials dt { color: #667085; font-size: 8px; font-weight: 700; }
+.invite-credentials dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #20352f; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; font-weight: 750; }
 .invite-share-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .invite-share-actions .button { min-height: 36px; flex: 1; font-size: 9px; }
 .invite-share-card code { overflow: hidden; padding: 7px 8px; border: 1px solid #dbe5e1; border-radius: 6px; background: rgb(255 255 255 / 78%); color: #526173; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }

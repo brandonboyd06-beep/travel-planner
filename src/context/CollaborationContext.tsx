@@ -10,8 +10,8 @@ import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { CollaborationModal } from '../components/CollaborationModal'
 import {
   CollaborationContext,
-  type AuthMode,
   type CollaborationContextValue,
+  type PreparedTripAccess,
   type SharedTrip,
   type SyncStatus,
   type TripMember,
@@ -33,13 +33,6 @@ import {
   type LocalPreferenceChange,
 } from '../lib/localPreferences'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
-
-const MT_TRAVEL_URL = 'https://millertimetravel.xyz/'
-
-function getAuthReturnUrl() {
-  const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
-  return isLocal ? `${window.location.origin}/` : MT_TRAVEL_URL
-}
 
 function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
@@ -147,15 +140,8 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       }
 
       if (!membership) {
-        const createdTrip = await client
-          .schema('travel_planner')
-          .from('trips')
-          .insert({ owner_id: nextUser.id })
-          .select('id, name')
-          .single()
-        if (createdTrip.error) throw createdTrip.error
-
-        membership = { trip_id: createdTrip.data.id, role: 'owner' }
+        await client.auth.signOut({ scope: 'local' })
+        throw new Error('This account is not on the Banff trip guest list. Ask Brandon to add this email, then try again.')
       }
 
       const tripId = membership.trip_id as string
@@ -260,8 +246,8 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
         if (currentUserIdRef.current !== nextUserId) {
           initializationGenerationRef.current += 1
           currentUserIdRef.current = nextUserId
-          setUser(nextUser)
         }
+        setUser(nextUser)
         if (!session?.user) {
           setTrip(null)
           setMembers([])
@@ -441,7 +427,7 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     }
   }, [queueRemoteRow, trip, user])
 
-  const authenticateWithPassword = useCallback(async (email: string, password: string, displayName: string, mode: AuthMode) => {
+  const authenticateWithPassword = useCallback(async (email: string, password: string) => {
     const client = await getSupabaseClient()
     if (!client) throw new Error('Cloud collaboration is not configured on this deployment.')
 
@@ -449,16 +435,7 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     setError('')
     setStatus('connecting')
 
-    const result = mode === 'signin'
-      ? await client.auth.signInWithPassword({ email: normalizedEmail, password })
-      : await client.auth.signUp({
-        email: normalizedEmail,
-        password,
-        options: {
-          emailRedirectTo: getAuthReturnUrl(),
-          data: { display_name: displayName.trim().slice(0, 80) || normalizedEmail.split('@')[0].slice(0, 80) },
-        },
-      })
+    const result = await client.auth.signInWithPassword({ email: normalizedEmail, password })
 
     if (result.error) {
       // Credential errors belong to this form, not the shared-trip sync
@@ -468,14 +445,11 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       throw result.error
     }
 
-    if (!result.data.session) {
-      setStatus('local')
-      return 'confirmation-required' as const
-    }
+    if (!result.data.session) throw new Error('MT Travel could not open a signed-in session.')
 
     setError('')
     setStatus('syncing')
-    return 'signed-in' as const
+    return
   }, [])
 
   const updatePassword = useCallback(async (password: string) => {
@@ -483,7 +457,10 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     if (!client) throw new Error('Cloud collaboration is not configured on this deployment.')
     setError('')
     setStatus('connecting')
-    const { error: passwordError } = await client.auth.updateUser({ password })
+    const { error: passwordError } = await client.auth.updateUser({
+      password,
+      data: { must_change_password: false },
+    })
     if (passwordError) {
       setStatus(trip ? 'synced' : 'syncing')
       setError('')
@@ -493,21 +470,47 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     setStatus(trip ? 'synced' : 'syncing')
   }, [trip])
 
-  const inviteMember = useCallback(async (email: string, displayName: string) => {
+  const prepareMemberAccess = useCallback(async (
+    action: 'invite' | 'reset',
+    email: string,
+    displayName: string,
+  ): Promise<PreparedTripAccess> => {
     const client = clientRef.current
     if (!client || !trip || !user) throw new Error('Sign in before adding a collaborator.')
     if (trip.role !== 'owner') throw new Error('Only the trip owner can add collaborators.')
 
-    const { error: inviteError } = await client.schema('travel_planner').from('trip_members').insert({
-      trip_id: trip.id,
-      invited_email: email.trim().toLowerCase(),
-      display_name: displayName.trim().slice(0, 80) || null,
-      role: 'editor',
-      invited_by: user.id,
+    const { data, error: accessError } = await client.functions.invoke('trip-access', {
+      body: {
+        action,
+        tripId: trip.id,
+        email: email.trim().toLowerCase(),
+        displayName: displayName.trim().slice(0, 80),
+      },
     })
-    if (inviteError) throw inviteError
+    if (accessError) {
+      let detail = accessError.message
+      if (accessError.context instanceof Response) {
+        try {
+          const body = await accessError.context.clone().json() as { error?: unknown }
+          if (typeof body.error === 'string') detail = body.error
+        } catch {
+          // Keep the SDK error when the response body is unavailable.
+        }
+      }
+      throw new Error(detail)
+    }
+    if (!data || typeof data.temporaryPassword !== 'string') throw new Error('MT Travel did not return the temporary password. Try again.')
     setMembers(await refreshMembers(client, trip.id))
+    return data as PreparedTripAccess
   }, [trip, user])
+
+  const inviteMember = useCallback((email: string, displayName: string) => (
+    prepareMemberAccess('invite', email, displayName)
+  ), [prepareMemberAccess])
+
+  const resetMemberPassword = useCallback((member: TripMember) => (
+    prepareMemberAccess('reset', member.invited_email, member.display_name ?? '')
+  ), [prepareMemberAccess])
 
   const signOut = useCallback(async () => {
     initializationGenerationRef.current += 1
@@ -546,8 +549,9 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     authenticateWithPassword,
     updatePassword,
     inviteMember,
+    resetMemberPassword,
     signOut,
-  }), [authenticateWithPassword, error, initializeCloud, inviteMember, members, modalOpen, noticeVisible, signOut, status, trip, updatePassword, user])
+  }), [authenticateWithPassword, error, initializeCloud, inviteMember, members, modalOpen, noticeVisible, resetMemberPassword, signOut, status, trip, updatePassword, user])
 
   return (
     <CollaborationContext.Provider value={contextValue}>

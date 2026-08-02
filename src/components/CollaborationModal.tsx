@@ -1,32 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, Check, Cloud, Copy, Eye, EyeOff, HardDrive, KeyRound, LoaderCircle, LogIn, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
+import { Check, Cloud, Copy, Eye, EyeOff, HardDrive, KeyRound, LoaderCircle, LogIn, Mail, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { useCollaboration } from '../context/collaboration'
-import type { AuthMode } from '../context/collaboration'
-import { getSupabaseClient } from '../lib/supabase'
+import type { PreparedTripAccess, TripMember } from '../context/collaboration'
 import { Button } from './ui'
 
-type AuthStep = 'credentials' | 'forgot-password' | 'update-password'
+type AuthStep = 'credentials' | 'update-password'
 
-const MT_TRAVEL_URL = 'https://millertimetravel.xyz/'
-
-function getAuthReturnUrl() {
-  const isLocal = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost'
-  return isLocal ? `${window.location.origin}/` : MT_TRAVEL_URL
-}
-
-function friendlyAuthError(caught: unknown, action: 'signin' | 'signup' | 'reset' | 'update') {
+function friendlyAuthError(caught: unknown, action: 'signin' | 'update') {
   const rawMessage = caught instanceof Error ? caught.message : ''
   const normalized = rawMessage.toLowerCase()
 
-  if (normalized.includes('invalid login credentials')) return 'That email and password do not match. Try again, or tap “Set or reset password.”'
-  if (normalized.includes('email not confirmed')) return 'Please confirm your email once, then come back and sign in with your password.'
-  if (normalized.includes('user already registered')) return 'That email already has an account. Choose Sign in, or set a new password.'
+  if (normalized.includes('invalid login credentials')) return 'That email and password do not match. Try again, or ask Brandon for a new temporary password.'
+  if (normalized.includes('email not confirmed')) return 'Ask Brandon to make you a fresh temporary password, then try again.'
   if (normalized.includes('password') && normalized.includes('weak')) return 'Choose a stronger password with at least 8 characters.'
-  if (normalized.includes('rate limit') || normalized.includes('too many requests')) return 'Too many email requests were made. Wait a few minutes, then try again.'
+  if (normalized.includes('rate limit') || normalized.includes('too many requests')) return 'Too many sign-in attempts were made. Wait a few minutes, then try again.'
 
   if (action === 'signin') return 'We could not sign you in. Check the email and password, then try again.'
-  if (action === 'signup') return 'We could not create that account. Check the details, then try again.'
-  if (action === 'reset') return 'We could not send the password email. Check the address, then try again.'
   return 'We could not save that password. Try again.'
 }
 
@@ -99,6 +88,7 @@ export function CollaborationModal() {
     noticeVisible,
     openModal,
     retrySync,
+    resetMemberPassword,
     signOut,
     status,
     trip,
@@ -106,8 +96,6 @@ export function CollaborationModal() {
     user,
   } = useCollaboration()
   const [email, setEmail] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const [authStep, setAuthStep] = useState<AuthStep>('credentials')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -116,44 +104,36 @@ export function CollaborationModal() {
   const [inviteName, setInviteName] = useState('')
   const [message, setMessage] = useState('')
   const [formError, setFormError] = useState('')
-  const [readyInvite, setReadyInvite] = useState<{ email: string; name: string } | null>(null)
+  const [readyInvite, setReadyInvite] = useState<PreparedTripAccess | null>(null)
+  const [inviteSubmitting, setInviteSubmitting] = useState(false)
+  const [resettingMemberId, setResettingMemberId] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 
+  const mustChangePassword = user?.user_metadata?.must_change_password === true
+
   useEffect(() => {
-    let active = true
-    let unsubscribe: (() => void) | undefined
-
-    void getSupabaseClient().then((client) => {
-      if (!active || !client) return
-      const { data } = client.auth.onAuthStateChange((event) => {
-        if (event !== 'PASSWORD_RECOVERY') return
-        setAuthMode('signin')
-        setAuthStep('update-password')
-        setPassword('')
-        setFormError('')
-        setMessage('Your email is confirmed. Choose your new MT Travel password.')
-        openModal()
-      })
-      unsubscribe = () => data.subscription.unsubscribe()
-    })
-
-    return () => {
-      active = false
-      unsubscribe?.()
-    }
-  }, [openModal])
+    if (!mustChangePassword) return
+    setAuthStep('update-password')
+    setPassword('')
+    setFormError('')
+    setMessage('One quick step: choose your own password before planning with the group.')
+    openModal()
+  }, [mustChangePassword, openModal])
 
   useEffect(() => {
     if (!modalOpen) return
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    window.setTimeout(() => closeButtonRef.current?.focus(), 0)
+    window.setTimeout(() => {
+      if (mustChangePassword) document.getElementById('collaboration-new-password')?.focus()
+      else closeButtonRef.current?.focus()
+    }, 0)
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !mustChangePassword) {
         event.preventDefault()
         closeModal()
         return
@@ -180,47 +160,20 @@ export function CollaborationModal() {
       document.body.style.overflow = previousOverflow
       window.setTimeout(() => previousFocus?.focus(), 0)
     }
-  }, [closeModal, modalOpen])
+  }, [closeModal, modalOpen, mustChangePassword])
 
   const submitAuth = async (event: FormEvent) => {
     event.preventDefault()
     setFormError('')
     setMessage('')
 
-    if (authMode === 'signup' && password.length < 8) {
-      setFormError('Use at least 8 characters for your password.')
-      return
-    }
-
     setAuthSubmitting(true)
     try {
-      const result = await authenticateWithPassword(email, password, displayName, authMode)
+      await authenticateWithPassword(email, password)
       setPassword('')
-      setMessage(result === 'signed-in'
-        ? authMode === 'signin' ? 'Signed in. Opening your shared trip…' : 'Your account is ready. Opening the shared trip…'
-        : 'Almost done! Check your email once to confirm this new account. If no email arrives, choose Sign in or set/reset the password—this email may already have an account.')
+      setMessage('Signed in. Opening your shared trip…')
     } catch (caught) {
-      setFormError(friendlyAuthError(caught, authMode))
-    } finally {
-      setAuthSubmitting(false)
-    }
-  }
-
-  const submitPasswordReset = async (event: FormEvent) => {
-    event.preventDefault()
-    setFormError('')
-    setMessage('')
-    setAuthSubmitting(true)
-    try {
-      const client = await getSupabaseClient()
-      if (!client) throw new Error('Cloud collaboration is not configured on this deployment.')
-      const { error: authError } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: getAuthReturnUrl(),
-      })
-      if (authError) throw authError
-      setMessage('Password email sent. Open it, choose a new password here, then future sign-ins are instant.')
-    } catch (caught) {
-      setFormError(friendlyAuthError(caught, 'reset'))
+      setFormError(friendlyAuthError(caught, 'signin'))
     } finally {
       setAuthSubmitting(false)
     }
@@ -248,15 +201,6 @@ export function CollaborationModal() {
     }
   }
 
-  const changeAuthMode = (mode: AuthMode) => {
-    setAuthMode(mode)
-    setAuthStep('credentials')
-    setPassword('')
-    setShowPassword(false)
-    setFormError('')
-    setMessage('')
-  }
-
   const submitInvite = async (event: FormEvent) => {
     event.preventDefault()
     setFormError('')
@@ -265,30 +209,51 @@ export function CollaborationModal() {
     setLinkCopied(false)
     const normalizedEmail = inviteEmail.trim().toLowerCase()
     const normalizedName = inviteName.trim()
+    setInviteSubmitting(true)
     try {
-      await inviteMember(normalizedEmail, normalizedName)
+      const prepared = await inviteMember(normalizedEmail, normalizedName)
       setInviteEmail('')
       setInviteName('')
-      setReadyInvite({ email: normalizedEmail, name: normalizedName })
-      setMessage('Guest added. Send the invite below. First visit: Create account and choose a password. Returning members: Sign in.')
+      setReadyInvite(prepared)
+      setMessage('Login ready. Send the details below—no signup email or magic link is needed.')
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : 'Unable to add this collaborator.')
+    } finally {
+      setInviteSubmitting(false)
     }
   }
 
   const inviteLink = typeof window === 'undefined' ? '' : `${window.location.origin}/`
   const inviteEmailHref = readyInvite ? `mailto:${encodeURIComponent(readyInvite.email)}?${new URLSearchParams({
     subject: 'Join our Banff trip on MT Travel',
-    body: `Hi${readyInvite.name ? ` ${readyInvite.name}` : ''},\n\nYou’re invited to help plan our Banff trip in MT Travel.\n\nOpen ${inviteLink} and use ${readyInvite.email}. First visit: choose Create account and make a password. Returning visit: choose Sign in and use that password.\n\nSee you in the Rockies!`,
+    body: `Hi${readyInvite.displayName ? ` ${readyInvite.displayName}` : ''},\n\nYou’re invited to help plan our Banff trip in MT Travel.\n\nOpen: ${inviteLink}\nEmail: ${readyInvite.email}\nTemporary password: ${readyInvite.temporaryPassword}\n\nTap Sign in. MT Travel will immediately ask you to replace the temporary password with your own.\n\nSee you in the Rockies!`,
   }).toString()}` : ''
 
-  const copyInviteLink = async () => {
+  const copyInviteDetails = async () => {
+    if (!readyInvite) return
     try {
-      await navigator.clipboard.writeText(inviteLink)
+      await navigator.clipboard.writeText(`MT Travel Banff trip\n${inviteLink}\nEmail: ${readyInvite.email}\nTemporary password: ${readyInvite.temporaryPassword}\n\nTap Sign in, then choose your own password.`)
       setLinkCopied(true)
       setFormError('')
     } catch {
-      setFormError('Copy did not work in this browser. Use the email invite button or copy the link from the address bar.')
+      setFormError('Copy did not work in this browser. Use the email invite button instead.')
+    }
+  }
+
+  const resetAccess = async (member: TripMember) => {
+    setFormError('')
+    setMessage('')
+    setReadyInvite(null)
+    setLinkCopied(false)
+    setResettingMemberId(member.id)
+    try {
+      const prepared = await resetMemberPassword(member)
+      setReadyInvite(prepared)
+      setMessage(`New temporary password ready for ${member.display_name || member.invited_email}. Their old password no longer works.`)
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Unable to reset that login.')
+    } finally {
+      setResettingMemberId(null)
     }
   }
 
@@ -305,9 +270,9 @@ export function CollaborationModal() {
 
       {modalOpen ? (
         <div id="collaboration-dialog" className="collaboration-layer" role="dialog" aria-modal="true" aria-labelledby="collaboration-title">
-          <button className="collaboration-scrim" type="button" onClick={closeModal} aria-hidden="true" tabIndex={-1} />
+          <button className="collaboration-scrim" type="button" onClick={mustChangePassword ? undefined : closeModal} aria-hidden="true" tabIndex={-1} />
           <section ref={dialogRef} className="collaboration-modal">
-            <button ref={closeButtonRef} className="modal-close" type="button" onClick={closeModal} aria-label="Close collaboration dialog"><X size={18} /></button>
+            {!mustChangePassword ? <button ref={closeButtonRef} className="modal-close" type="button" onClick={closeModal} aria-label="Close collaboration dialog"><X size={18} /></button> : null}
 
             {authStep === 'update-password' ? (
               <>
@@ -338,7 +303,7 @@ export function CollaborationModal() {
                     {authSubmitting ? <LoaderCircle className="spin" size={16} /> : <KeyRound size={16} />}
                     Save password
                   </Button>
-                  <button className="auth-back-button" type="button" onClick={() => { setAuthStep('credentials'); setPassword(''); setMessage(''); setFormError('') }}><ArrowLeft size={14} />Back</button>
+                  <small><ShieldCheck size={13} />This replaces the temporary password Brandon shared with you.</small>
                 </form>
               </>
             ) : user && !trip ? (
@@ -350,48 +315,21 @@ export function CollaborationModal() {
                 <div className="collaboration-unavailable"><LoaderCircle className="spin" /><div><strong>{status === 'error' ? 'Could not connect' : 'Just a moment'}</strong><span>{status === 'error' ? error : 'Your local choices stay on this device while we connect.'}</span></div></div>
                 {status === 'error' ? <Button className="primary" type="button" onClick={() => void retrySync()}><Cloud size={15} />Try again</Button> : null}
               </>
-            ) : !user || !trip ? authStep === 'forgot-password' ? (
-              <>
-                <CollaborationBrand />
-                <span className="modal-eyebrow">MT Travel · Password help</span>
-                <h2 id="collaboration-title">Set or reset your password</h2>
-                <p className="modal-intro">Enter your account email. We’ll send one secure setup link, then you can sign in with your password every time.</p>
-                {configured ? (
-                  <form className="collaboration-form single-column" onSubmit={submitPasswordReset}>
-                    <label htmlFor="collaboration-reset-email"><span>Email</span><input id="collaboration-reset-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete="email" required /></label>
-                    <Button className="primary" disabled={authSubmitting} type="submit">
-                      {authSubmitting ? <LoaderCircle className="spin" size={16} /> : <Mail size={16} />}
-                      Send password setup email
-                    </Button>
-                    <button className="auth-back-button" type="button" onClick={() => { setAuthStep('credentials'); setMessage(''); setFormError('') }}><ArrowLeft size={14} />Back to sign in</button>
-                    <small><ShieldCheck size={13} />This is only for password setup. Normal sign-in does not use an email link.</small>
-                  </form>
-                ) : (
-                  <div className="collaboration-unavailable"><HardDrive /><div><strong>Guest mode is active</strong><span>Password setup is not available in this preview.</span></div></div>
-                )}
-              </>
-            ) : (
+            ) : !user || !trip ? (
               <>
                 <CollaborationBrand />
                 <span className="modal-eyebrow">MT Travel group planning</span>
-                <h2 id="collaboration-title">{authMode === 'signin' ? 'Sign in to MT Travel' : 'Create your MT Travel account'}</h2>
-                <p className="modal-intro">{authMode === 'signin'
-                  ? 'Enter your email and password. You’ll go straight to the shared trip—no email link.'
-                  : 'Make an account with the email that received your invite. If you used that email here before, choose Sign in instead.'}</p>
+                <h2 id="collaboration-title">Sign in to MT Travel</h2>
+                <p className="modal-intro">Use the email and temporary password Brandon sent you. There are no signup emails or magic links.</p>
                 <div className="storage-choice-grid">
                   <article><HardDrive /><div><strong>Guest mode is ready</strong><span>Private to this device. No account and no shared writes.</span></div><Check /></article>
                   <article><Users /><div><strong>Invite when ready</strong><span>Share notes, lists, lodging, itinerary choices, and budget estimates.</span></div></article>
                 </div>
 
                 {configured ? (
-                  <form className={`collaboration-form ${authMode}`} onSubmit={submitAuth}>
-                    <div className="auth-mode-switch" role="group" aria-label="Choose sign in or create account">
-                      <button type="button" aria-pressed={authMode === 'signin'} className={authMode === 'signin' ? 'active' : ''} onClick={() => changeAuthMode('signin')}><LogIn size={15} />Sign in</button>
-                      <button type="button" aria-pressed={authMode === 'signup'} className={authMode === 'signup' ? 'active' : ''} onClick={() => changeAuthMode('signup')}><UserPlus size={15} />Create account</button>
-                    </div>
-                    <div className="collaboration-form-heading"><strong>{authMode === 'signin' ? 'Welcome back' : 'Make your account'}</strong><span>{authMode === 'signin' ? 'Use the same email you used before.' : 'Use the email that received the trip invitation.'}</span></div>
-                    {authMode === 'signup' ? <label htmlFor="collaboration-name"><span>Your name</span><input id="collaboration-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Alex" autoComplete="name" maxLength={80} /></label> : null}
-                    <label htmlFor="collaboration-email"><span>Email</span><input id="collaboration-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete={authMode === 'signin' ? 'username' : 'email'} required /></label>
+                  <form className="collaboration-form signin" onSubmit={submitAuth}>
+                    <div className="collaboration-form-heading"><strong>Welcome</strong><span>Only people on Brandon’s guest list can sign in.</span></div>
+                    <label htmlFor="collaboration-email"><span>Email</span><input id="collaboration-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" autoComplete="username" required /></label>
                     <div className="password-field full-field">
                       <label htmlFor="collaboration-password"><span>Password</span></label>
                       <div>
@@ -399,10 +337,9 @@ export function CollaborationModal() {
                           id="collaboration-password"
                           value={password}
                           onChange={(event) => setPassword(event.target.value)}
-                          placeholder={authMode === 'signin' ? 'Your password' : '8 or more characters'}
+                          placeholder="Your password"
                           type={showPassword ? 'text' : 'password'}
-                          autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
-                          minLength={authMode === 'signup' ? 8 : undefined}
+                          autoComplete="current-password"
                           required
                         />
                         <button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
@@ -411,11 +348,11 @@ export function CollaborationModal() {
                       </div>
                     </div>
                     <Button className="primary" disabled={authSubmitting} type="submit">
-                      {authSubmitting ? <LoaderCircle className="spin" size={16} /> : authMode === 'signin' ? <LogIn size={16} /> : <UserPlus size={16} />}
-                      {authMode === 'signin' ? 'Sign in' : 'Create account with password'}
+                      {authSubmitting ? <LoaderCircle className="spin" size={16} /> : <LogIn size={16} />}
+                      Sign in
                     </Button>
-                    {authMode === 'signin' ? <button className="auth-help-button" type="button" onClick={() => { setAuthStep('forgot-password'); setPassword(''); setMessage(''); setFormError('') }}>New here or forgot your password?</button> : null}
-                    <small><ShieldCheck size={13} />Your password is securely handled by Supabase and is never stored in this app.</small>
+                    <p className="auth-manual-help"><KeyRound size={13} /><span><strong>Forgot your password?</strong> Ask Brandon to tap “New password” beside your name. He can send you a fresh temporary password.</span></p>
+                    <small><ShieldCheck size={13} />Passwords are securely handled by Supabase and never stored in this app.</small>
                   </form>
                 ) : (
                   <div className="collaboration-unavailable"><HardDrive /><div><strong>Guest mode is active</strong><span>Group planning is not available in this preview, but your trip still saves on this device.</span></div></div>
@@ -434,8 +371,8 @@ export function CollaborationModal() {
                   {members.map((member) => (
                     <div className="member-row" key={member.id}>
                       <span className="member-avatar">{(member.display_name || member.invited_email).slice(0, 1).toUpperCase()}</span>
-                      <div><strong>{member.display_name || member.invited_email}</strong><span>{member.accepted_at ? member.invited_email : 'Invitation pending'}</span></div>
-                      <small>{member.role}</small>
+                      <div><strong>{member.display_name || member.invited_email}</strong><span>{member.accepted_at ? member.invited_email : 'Login not prepared yet'}</span></div>
+                      <div className="member-actions"><small>{member.role}</small>{trip.role === 'owner' && member.role !== 'owner' ? <button type="button" disabled={resettingMemberId === member.id} onClick={() => void resetAccess(member)}>{resettingMemberId === member.id ? 'Working…' : 'New password'}</button> : null}</div>
                     </div>
                   ))}
                 </div>
@@ -443,21 +380,21 @@ export function CollaborationModal() {
                 {trip.role === 'owner' ? (
                   <>
                     <form className="invite-form" onSubmit={submitInvite}>
-                      <div><UserPlus size={17} /><div><strong>Invite a trip member</strong><span>Add their email, then share this MT Travel link. They’ll join after secure sign-in.</span></div></div>
+                      <div><UserPlus size={17} /><div><strong>Prepare a guest login</strong><span>Add their email. MT Travel makes a temporary password for you to send them.</span></div></div>
                       <div className="invite-fields">
                         <input value={inviteName} onChange={(event) => setInviteName(event.target.value)} placeholder="Name" aria-label="Collaborator name" autoComplete="name" maxLength={80} />
                         <input id="trip-invite-email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Email address" aria-label="Collaborator email" type="email" autoComplete="email" required />
-                        <Button className="primary" type="submit"><UserPlus size={15} />Add to guest list</Button>
+                        <Button className="primary" disabled={inviteSubmitting} type="submit">{inviteSubmitting ? <LoaderCircle className="spin" size={15} /> : <UserPlus size={15} />}{inviteSubmitting ? 'Preparing…' : 'Prepare login'}</Button>
                       </div>
                     </form>
                     {readyInvite ? (
-                      <section className="invite-share-card" aria-label={`Share invite with ${readyInvite.name || readyInvite.email}`}>
-                        <div><Check /><span><strong>{readyInvite.name || readyInvite.email} is on the guest list</strong><small>Send the link. First visit: Create account and choose a password. Returning visit: Sign in with {readyInvite.email}.</small></span></div>
+                      <section className="invite-share-card" aria-label={`Share login with ${readyInvite.displayName || readyInvite.email}`}>
+                        <div><Check /><span><strong>{readyInvite.displayName || readyInvite.email} can sign in now</strong><small>Send these one-time details. MT Travel asks them to choose a private password immediately.</small></span></div>
+                        <dl className="invite-credentials"><div><dt>Email</dt><dd>{readyInvite.email}</dd></div><div><dt>Temporary password</dt><dd>{readyInvite.temporaryPassword}</dd></div></dl>
                         <div className="invite-share-actions">
-                          <Button className="secondary" type="button" onClick={() => void copyInviteLink()}><Copy size={14} />{linkCopied ? 'Link copied' : 'Copy trip link'}</Button>
-                          <a className="button primary" href={inviteEmailHref}><Mail size={14} />Email invite</a>
+                          <Button className="secondary" type="button" onClick={() => void copyInviteDetails()}><Copy size={14} />{linkCopied ? 'Details copied' : 'Copy login details'}</Button>
+                          <a className="button primary" href={inviteEmailHref}><Mail size={14} />Send email</a>
                         </div>
-                        <code>{inviteLink}</code>
                       </section>
                     ) : null}
                   </>

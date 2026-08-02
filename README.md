@@ -32,7 +32,7 @@ VITE_SUPABASE_URL=https://mymunodjaxymhbnhjwjx.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 
-Use a publishable key only. Never expose a Supabase secret or service-role key in Vite or Netlify browser variables. Add the deployed Netlify origin to Supabase Auth's allowed redirect URLs so magic links can return to the app.
+Use a publishable key only. Never expose a Supabase secret or service-role key in Vite or Netlify browser variables. MT Travel uses password-only access and does not rely on magic links or email confirmation redirects.
 
 The floating Miller Time AI virtual travel agent runs in `supabase/functions/miller-time-ai/` and reads `OPENAI_API_KEY` from the Supabase project's Edge Function secrets. It defaults to `gpt-5.6-terra`, uses the Responses API with live web search, and can return review-only itinerary proposals inside the regular chat. The Book & Reserve page uses `supabase/functions/booking-readiness/` to refresh current official reservation guidance and still reads `ANTHROPIC_API_KEY`. Neither provider key is duplicated in Netlify or bundled into the browser app. The functions accept the project's publishable key, which allows account-free visitors while rejecting requests that are not made through a configured Supabase client.
 
@@ -57,7 +57,9 @@ Update lodging estimates in `src/data/lodging.ts`. Every lodging price is intent
 
 All optional planning choices are stored in `localStorage`, namespaced with `banff-2026:`. These include the preferred lodging option, checklist completion, reservation statuses, budget estimates, optional itinerary expansion, and personal notes. Visitors do not need an account and anonymous sessions never write to Supabase.
 
-The first local edit shows a small, dismissible confirmation explaining that the change is saved only on that device. Choosing **Collaborate** opens passwordless email sign-in. After sign-in, existing local choices are copied to a shared trip and subsequent edits sync through Supabase Realtime. Signing out leaves the browser-local copy intact.
+The first local edit shows a small, dismissible confirmation explaining that the change is saved only on that device. Choosing **Sign in** opens the private password login. After sign-in, existing local choices are copied to the shared trip and subsequent edits sync through Supabase Realtime. Signing out leaves the browser-local copy intact.
+
+The trip owner prepares each guest account from the **Invite** button. MT Travel creates a temporary password that the owner sends directly to the guest; the guest must replace it on first sign-in. Public signup, email confirmation, magic links, and email password resets are disabled. If a guest forgets a password, the owner can tap **New password** beside that person and send the new temporary login details.
 
 Database migrations live in `supabase/migrations/`. The dedicated `travel_planner` schema contains:
 
@@ -66,7 +68,7 @@ Database migrations live in `supabase/migrations/`. The dedicated `travel_planne
 - `trip_members` — owner/editor/viewer membership and pending email invitations
 - `trip_state` — one JSON value per local preference key for low-conflict syncing
 
-Every table has row-level security. The `anon` role has no schema or table privileges; authenticated reads and writes require matching trip membership. Owners can add collaborators by email, and the recipient joins after signing in with that same address.
+Every table has row-level security. The `anon` role has no schema or table privileges; authenticated reads and writes require matching trip membership. Only the existing trip owner can provision or reset collaborator accounts. Authenticated users from other applications in the shared Supabase project cannot create Travel Planner trips or access trip rows without an explicit membership.
 
 ## Maps and imagery
 

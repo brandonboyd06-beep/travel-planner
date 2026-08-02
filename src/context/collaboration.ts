@@ -16,7 +16,12 @@ export interface TripMember {
 }
 
 export type SyncStatus = 'local' | 'connecting' | 'syncing' | 'synced' | 'error'
-export type AuthMode = 'signin' | 'signup'
+export interface PreparedTripAccess {
+  email: string
+  displayName: string | null
+  temporaryPassword: string
+  accountCreated: boolean
+}
 
 export interface CollaborationContextValue {
   configured: boolean
@@ -31,9 +36,10 @@ export interface CollaborationContextValue {
   closeModal: () => void
   dismissNotice: () => void
   retrySync: () => Promise<void>
-  authenticateWithPassword: (email: string, password: string, displayName: string, mode: AuthMode) => Promise<'signed-in' | 'confirmation-required'>
+  authenticateWithPassword: (email: string, password: string) => Promise<void>
   updatePassword: (password: string) => Promise<void>
-  inviteMember: (email: string, displayName: string) => Promise<void>
+  inviteMember: (email: string, displayName: string) => Promise<PreparedTripAccess>
+  resetMemberPassword: (member: TripMember) => Promise<PreparedTripAccess>
   signOut: () => Promise<void>
 }
 
