@@ -46,11 +46,25 @@ export type ItineraryStopPatch = Partial<Pick<ItineraryStop, 'name' | 'kind' | '
   coordinates?: [number, number] | null
 }
 
+export interface ItineraryDayReplacement {
+  dayId: string
+  title: string
+  location: string
+  label: string | null
+  stops: Array<Omit<ItineraryStop, 'id' | 'source'>>
+  optional: string[]
+  backup: string
+  logistics: string
+  dining: string[]
+  coordinates?: [number, number]
+}
+
 export type ItineraryOperation =
   | { type: 'add_stop'; dayId: string; afterStopId?: string; stop: Omit<ItineraryStop, 'id' | 'source'> }
   | { type: 'update_stop'; dayId: string; stopId: string; patch: ItineraryStopPatch }
   | { type: 'move_stop'; stopId: string; fromDayId: string; toDayId: string; afterStopId?: string }
   | { type: 'remove_stop'; dayId: string; stopId: string }
+  | { type: 'replace_days'; days: ItineraryDayReplacement[] }
 
 export interface ItineraryProposal {
   id: string

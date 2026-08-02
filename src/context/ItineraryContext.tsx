@@ -50,12 +50,12 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     const day = plan.days.find((item) => item.id === dayId)
     const index = day?.stops.findIndex((stop) => stop.id === stopId) ?? -1
     if (!day || index < 0) return
-    if (day.stops[index].priority === 'fixed') return
+    if (day.stops[index].priority === 'fixed' && day.stops[index].source !== 'miller') return
     if ((direction < 0 && index === 0) || (direction > 0 && index === day.stops.length - 1)) return
     const stops = [...day.stops]
     const destination = index + direction
     const [stop] = stops.splice(index, 1)
-    stops.splice(destination, 0, { ...stop, source: 'manual' })
+    stops.splice(destination, 0, { ...stop, source: stop.priority === 'fixed' && stop.source === 'miller' ? 'miller' : 'manual' })
     const next: ItineraryPlan = {
       ...plan,
       revision: plan.revision + 1,
@@ -73,8 +73,16 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   }, [commit, plan])
 
   const applyAiProposal = useCallback((proposal: ItineraryProposal) => {
-    commit(applyProposal(plan, proposal), proposal.summary)
-  }, [commit, plan])
+    if (!canEdit) throw new Error('Viewers can explore the trip but cannot change the shared itinerary.')
+    setStoredPlan((currentValue: unknown) => {
+      const currentPlan = getInitialItineraryPlan(currentValue)
+      const next = applyProposal(currentPlan, proposal)
+      undoRef.current = currentPlan
+      setCanUndo(true)
+      setLastChange(proposal.summary)
+      return next
+    })
+  }, [canEdit, setStoredPlan])
 
   const undo = useCallback(() => {
     const previous = undoRef.current

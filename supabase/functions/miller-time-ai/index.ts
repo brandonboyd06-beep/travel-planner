@@ -5,10 +5,13 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_MODEL = 'gpt-5.6-terra'
 const OPENAI_TIMEOUT_MS = 55_000
-const MAX_BODY_BYTES = 24_000
+const MAX_BODY_BYTES = 48_000
 const MAX_CHANGE_REQUEST_LENGTH = 1_200
-const MAX_ITINERARY_BYTES = 14_000
+const MAX_ITINERARY_BYTES = 22_000
 const MAX_PROPOSAL_OPERATIONS = 4
+const MAX_REWRITE_DAYS = 6
+const MAX_REWRITE_STOPS_PER_DAY = 12
+const MAX_REWRITE_STOPS = 64
 const WINDOW_MS = 60_000
 const REQUESTS_PER_WINDOW = 10
 const requestWindows = new Map<string, number[]>()
@@ -150,9 +153,16 @@ interface CompactItineraryStop {
 
 interface CompactItineraryDay {
   id: string
+  date?: string
   title: string
   location?: string
+  label?: string
   stops: CompactItineraryStop[]
+  optional: string[]
+  backup: string
+  logistics: string
+  dining: string[]
+  coordinates?: [number, number]
 }
 
 interface CompactItinerary {
@@ -169,11 +179,25 @@ interface ProposalStop {
   sourceUrl?: string
 }
 
+interface ProposalDayReplacement {
+  dayId: string
+  title: string
+  location: string
+  label: string | null
+  stops: Array<Omit<ProposalStop, 'priority'> & { priority: (typeof itineraryPriorities)[number] }>
+  optional: string[]
+  backup: string
+  logistics: string
+  dining: string[]
+  coordinates?: [number, number]
+}
+
 type ProposalOperation =
   | { type: 'add_stop'; dayId: string; afterStopId?: string; stop: ProposalStop }
   | { type: 'update_stop'; dayId: string; stopId: string; patch: Partial<ProposalStop> }
   | { type: 'move_stop'; stopId: string; fromDayId: string; toDayId: string; afterStopId?: string }
   | { type: 'remove_stop'; dayId: string; stopId: string }
+  | { type: 'replace_days'; days: ProposalDayReplacement[] }
 
 interface ItineraryProposal {
   id: string
@@ -241,6 +265,12 @@ function validCoordinates(value: unknown): [number, number] | null {
   return [latitude, longitude]
 }
 
+function boundedStringList(value: unknown, maximumItems: number, maximumLength: number) {
+  if (!Array.isArray(value) || value.length > maximumItems) return null
+  const result = value.map((item) => boundedString(item, maximumLength))
+  return result.every((item): item is string => Boolean(item)) ? result : null
+}
+
 function parseCompactItinerary(value: unknown): CompactItinerary | null {
   const rawDays = Array.isArray(value)
     ? value
@@ -254,12 +284,21 @@ function parseCompactItinerary(value: unknown): CompactItinerary | null {
   for (const rawDay of rawDays) {
     if (!isRecord(rawDay)) return null
     const id = boundedString(rawDay.id, 80)
+    const date = rawDay.date === undefined ? undefined : boundedString(rawDay.date, 80)
     const title = boundedString(rawDay.title, 160)
-    if (!id || !title || dayIds.has(id) || !Array.isArray(rawDay.stops) || rawDay.stops.length > 32) return null
+    if (!id || !title || (rawDay.date !== undefined && !date) || dayIds.has(id) || !Array.isArray(rawDay.stops) || rawDay.stops.length > 32) return null
     dayIds.add(id)
 
     const location = rawDay.location === undefined ? undefined : boundedString(rawDay.location, 120)
     if (rawDay.location !== undefined && !location) return null
+    const label = rawDay.label === undefined ? undefined : boundedString(rawDay.label, 80)
+    if (rawDay.label !== undefined && !label) return null
+    const optional = boundedStringList(rawDay.optional ?? [], 8, 180)
+    const backup = rawDay.backup === undefined ? '' : boundedString(rawDay.backup, 500)
+    const logistics = rawDay.logistics === undefined ? '' : boundedString(rawDay.logistics, 500)
+    const dining = boundedStringList(rawDay.dining ?? [], 8, 140)
+    const dayCoordinates = rawDay.coordinates === undefined ? undefined : validCoordinates(rawDay.coordinates)
+    if (!optional || backup === null || logistics === null || !dining || (rawDay.coordinates !== undefined && !dayCoordinates)) return null
     const stops: CompactItineraryStop[] = []
 
     for (const rawStop of rawDay.stops) {
@@ -284,7 +323,7 @@ function parseCompactItinerary(value: unknown): CompactItinerary | null {
       stops.push({ id: stopId, name, kind, priority, mapsQuery, coordinates, note, sourceUrl })
     }
 
-    days.push({ id, title, location, stops })
+    days.push({ id, date, title, location, label, stops, optional, backup, logistics, dining, coordinates: dayCoordinates })
   }
 
   const itinerary = { days }
@@ -306,6 +345,71 @@ function parseProposalStop(value: unknown, trustedSourceUrls: ReadonlySet<string
   const sourceUrl = candidateSourceUrl && trustedSourceUrls.has(candidateSourceUrl) ? candidateSourceUrl : undefined
 
   return { name, kind: value.kind, priority: value.priority, mapsQuery, coordinates, note, sourceUrl }
+}
+
+function parseRewriteStop(
+  value: unknown,
+  trustedSourceUrls: ReadonlySet<string>,
+): ProposalDayReplacement['stops'][number] | null {
+  if (!isRecord(value)) return null
+  if (!hasOnlyKeys(value, ['name', 'kind', 'priority', 'mapsQuery', 'coordinates', 'note', 'sourceUrl'])) return null
+  const name = boundedString(value.name, 140)
+  const mapsQuery = boundedString(value.mapsQuery, 220)
+  if (!name || !mapsQuery || !isOneOf(value.kind, itineraryKinds) || !isOneOf(value.priority, itineraryPriorities)) return null
+  if (value.priority === 'fixed' && value.kind !== 'travel' && value.kind !== 'lodging') return null
+
+  const coordinates = value.coordinates == null ? undefined : validCoordinates(value.coordinates)
+  if (value.coordinates != null && !coordinates) return null
+  const note = value.note == null ? undefined : boundedString(value.note, 500)
+  if (value.note != null && !note) return null
+  const candidateSourceUrl = value.sourceUrl == null ? undefined : validWebUrl(value.sourceUrl)
+  const sourceUrl = candidateSourceUrl && trustedSourceUrls.has(candidateSourceUrl) ? candidateSourceUrl : undefined
+
+  return { name, kind: value.kind, priority: value.priority, mapsQuery, coordinates, note, sourceUrl }
+}
+
+function parseDayReplacement(value: unknown, trustedSourceUrls: ReadonlySet<string>): ProposalDayReplacement | null {
+  if (!isRecord(value)) return null
+  if (!hasOnlyKeys(value, ['dayId', 'title', 'location', 'label', 'stops', 'optional', 'backup', 'logistics', 'dining', 'coordinates'])) return null
+  const dayId = boundedString(value.dayId, 80)
+  const title = boundedString(value.title, 160)
+  const location = boundedString(value.location, 120)
+  const label = value.label == null ? null : boundedString(value.label, 80)
+  const optional = boundedStringList(value.optional, 6, 180)
+  const backup = boundedString(value.backup, 500)
+  const logistics = boundedString(value.logistics, 500)
+  const dining = boundedStringList(value.dining, 6, 140)
+  if (
+    !dayId || !title || !location || (value.label != null && !label)
+    || !Array.isArray(value.stops) || value.stops.length < 1 || value.stops.length > MAX_REWRITE_STOPS_PER_DAY
+    || !optional || !backup || !logistics || !dining
+  ) return null
+
+  const coordinates = value.coordinates == null ? undefined : validCoordinates(value.coordinates)
+  if (value.coordinates != null && !coordinates) return null
+  const stops = value.stops.map((stop) => parseRewriteStop(stop, trustedSourceUrls))
+  if (stops.some((stop) => !stop)) return null
+  const names = new Map<string, (typeof itineraryKinds)[number]>()
+  for (const stop of stops) {
+    if (!stop) return null
+    const normalizedName = normalizeStopName(stop.name)
+    const priorKind = names.get(normalizedName)
+    if (!normalizedName || (priorKind && !(['travel', 'lodging'].includes(priorKind) && ['travel', 'lodging'].includes(stop.kind)))) return null
+    names.set(normalizedName, stop.kind)
+  }
+
+  return {
+    dayId,
+    title,
+    location,
+    label,
+    stops: stops as ProposalDayReplacement['stops'],
+    optional,
+    backup,
+    logistics,
+    dining,
+    coordinates,
+  }
 }
 
 function parseProposalPatch(value: unknown, trustedSourceUrls: ReadonlySet<string>): Partial<ProposalStop> | null {
@@ -352,6 +456,13 @@ function normalizeStopName(value: string) {
   return value.toLocaleLowerCase('en-CA').replace(/[^a-z0-9]+/g, ' ').trim()
 }
 
+function normalizeBase(value: string) {
+  return normalizeStopName(value)
+    .replace(/\b(?:town|downtown|alberta|canada|ab|national park)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function validateProposalOperations(
   value: unknown,
   itinerary: CompactItinerary,
@@ -370,6 +481,43 @@ function validateProposalOperations(
 
   for (const rawOperation of value) {
     if (!isRecord(rawOperation) || typeof rawOperation.type !== 'string') return null
+
+    if (rawOperation.type === 'replace_days') {
+      if (value.length !== 1 || !hasOnlyKeys(rawOperation, ['type', 'days'])) return null
+      if (!Array.isArray(rawOperation.days) || rawOperation.days.length < 1 || rawOperation.days.length > MAX_REWRITE_DAYS) return null
+      const protectedDayIds = new Set([itinerary.days[0]?.id, itinerary.days.at(-1)?.id])
+      const replacementIds = new Set<string>()
+      let replacementStopCount = 0
+      const replacements: ProposalDayReplacement[] = []
+      for (const rawReplacement of rawOperation.days) {
+        const replacement = parseDayReplacement(rawReplacement, trustedSourceUrls)
+        if (
+          !replacement || !days.has(replacement.dayId) || protectedDayIds.has(replacement.dayId)
+          || replacementIds.has(replacement.dayId)
+        ) return null
+        replacementIds.add(replacement.dayId)
+        replacementStopCount += replacement.stops.length
+        if (replacementStopCount > MAX_REWRITE_STOPS) return null
+        replacements.push(replacement)
+      }
+      const replacementById = new Map(replacements.map((replacement) => [replacement.dayId, replacement]))
+      for (const replacement of replacements) {
+        const currentIndex = itinerary.days.findIndex((day) => day.id === replacement.dayId)
+        const currentDay = itinerary.days[currentIndex]
+        const previousDay = itinerary.days[currentIndex - 1]
+        const nextDay = itinerary.days[currentIndex + 1]
+        const previousEffectiveDay = previousDay ? replacementById.get(previousDay.id) ?? previousDay : undefined
+        const baseChangesDuringDay = Boolean(previousEffectiveDay && normalizeBase(previousEffectiveDay.location || '') !== normalizeBase(replacement.location))
+        if (baseChangesDuringDay && !replacement.stops.some((stop) => stop.kind === 'travel')) return null
+        if (baseChangesDuringDay && !replacement.stops.some((stop) => stop.kind === 'lodging')) return null
+        const disconnectsUnchangedNextDay = nextDay
+          && !replacementById.has(nextDay.id)
+          && normalizeBase(currentDay.location || '') !== normalizeBase(replacement.location)
+        if (disconnectsUnchangedNextDay) return null
+      }
+      operations.push({ type: 'replace_days', days: replacements })
+      continue
+    }
 
     if (rawOperation.type === 'add_stop') {
       if (!hasOnlyKeys(rawOperation, ['type', 'dayId', 'afterStopId', 'stop'])) return null
@@ -436,6 +584,43 @@ function validateProposalOperations(
   return operations
 }
 
+function rewriteSafetyWarnings(operations: ProposalOperation[], itinerary: CompactItinerary) {
+  const rewrite = operations.find((operation): operation is Extract<ProposalOperation, { type: 'replace_days' }> => operation.type === 'replace_days')
+  if (!rewrite) return []
+  const dayById = new Map(itinerary.days.map((day) => [day.id, day]))
+  const fixedChanges: string[] = []
+  const baseChanges: string[] = []
+
+  for (const replacement of rewrite.days) {
+    const current = dayById.get(replacement.dayId)
+    if (!current) continue
+    const replacementByName = new Map(replacement.stops.map((stop) => [normalizeStopName(stop.name), stop]))
+    if (current.stops.some((stop) => {
+      if (stop.priority !== 'fixed') return false
+      const proposed = replacementByName.get(normalizeStopName(stop.name))
+      return !proposed
+        || proposed.kind !== stop.kind
+        || proposed.priority !== stop.priority
+        || proposed.mapsQuery !== stop.mapsQuery
+        || proposed.note !== stop.note
+        || JSON.stringify(proposed.coordinates) !== JSON.stringify(stop.coordinates)
+    })) {
+      fixedChanges.push(current.date || replacement.dayId)
+    }
+    if (normalizeBase(current.location || '') !== normalizeBase(replacement.location)) {
+      baseChanges.push(current.date || replacement.dayId)
+    }
+  }
+
+  const warnings: string[] = []
+  if (baseChanges.length) {
+    warnings.push(`Overnight bases change on ${baseChanges.join(', ')}. Confirm new lodging before canceling anything already reserved.`)
+    warnings.push('This applies the day-by-day itinerary only; Lodging, Book & Reserve, and Budget keep their current planning entries until you update them separately.')
+  }
+  if (fixedChanges.length) warnings.push(`Fixed lodging, shuttle, or travel details change on ${fixedChanges.join(', ')}. Recheck every affected reservation before applying.`)
+  return warnings
+}
+
 function parseAssistantOutput(
   input: unknown,
   itinerary: CompactItinerary | null,
@@ -466,10 +651,13 @@ function parseAssistantOutput(
   const rationale = boundedString(input.rationale, 600)
   const trustedSourceUrls = new Set(trustedSources.map((source) => source.url))
   const operations = validateProposalOperations(input.operations, itinerary, trustedSourceUrls)
-  const warnings = Array.isArray(input.warnings)
+  const modelWarnings = Array.isArray(input.warnings)
     ? input.warnings.slice(0, 4).map((warning) => boundedString(warning, 240)).filter((warning): warning is string => Boolean(warning))
     : []
   if (!summary || !rationale || !operations) return null
+  const warnings = [...rewriteSafetyWarnings(operations, itinerary), ...modelWarnings]
+    .filter((warning, index, all) => all.indexOf(warning) === index)
+    .slice(0, 4)
 
   return {
     answer: `I’d recommend this change: ${summary.replace(/[.!?]+$/, '')}. ${rationale} Review it below—nothing changes until you tap Apply.`,
@@ -483,6 +671,19 @@ function parseAssistantOutput(
       warnings,
     },
   }
+}
+
+function assistantOutputValidationReason(input: unknown, itinerary: CompactItinerary | null, baseRevision: number) {
+  if (!isRecord(input)) return 'not_object'
+  if (!hasOnlyKeys(input, ['resolution', 'answer', 'baseRevision', 'summary', 'rationale', 'warnings', 'operations'])) return 'unexpected_keys'
+  if (!isOneOf(input.resolution, ['answer', 'proposal', 'already_planned', 'needs_clarification'] as const)) return 'invalid_resolution'
+  if (input.baseRevision !== baseRevision) return 'revision_mismatch'
+  if (!boundedString(input.answer, 900)) return 'invalid_answer'
+  if (input.resolution !== 'proposal') return 'invalid_nonproposal'
+  if (!itinerary) return 'missing_itinerary'
+  if (!boundedString(input.summary, 220)) return 'invalid_summary'
+  if (!boundedString(input.rationale, 600)) return 'invalid_rationale'
+  return 'invalid_operations'
 }
 
 function clientKey(request: Request) {
@@ -692,6 +893,38 @@ const proposalPatchSchema = {
   required: ['name', 'kind', 'priority', 'mapsQuery', 'coordinates', 'note', 'sourceUrl'],
 }
 
+const rewriteStopSchema = {
+  ...proposalStopSchema,
+  properties: {
+    ...proposalStopSchema.properties,
+    priority: { type: 'string', enum: itineraryPriorities },
+  },
+}
+
+const rewriteDaySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    dayId: { type: 'string', minLength: 1, maxLength: 80, description: 'Exact existing day ID. Arrival and departure day IDs are not allowed.' },
+    title: { type: 'string', minLength: 1, maxLength: 160 },
+    location: { type: 'string', minLength: 1, maxLength: 120, description: 'Where the group sleeps after this day.' },
+    label: nullableString(80),
+    stops: {
+      type: 'array',
+      minItems: 1,
+      maxItems: MAX_REWRITE_STOPS_PER_DAY,
+      description: 'Complete ordered stop list for this day, including travel and lodging transitions when applicable.',
+      items: rewriteStopSchema,
+    },
+    optional: { type: 'array', maxItems: 6, items: { type: 'string', minLength: 1, maxLength: 180 } },
+    backup: { type: 'string', minLength: 1, maxLength: 500 },
+    logistics: { type: 'string', minLength: 1, maxLength: 500 },
+    dining: { type: 'array', maxItems: 6, items: { type: 'string', minLength: 1, maxLength: 140 } },
+    coordinates: nullableCoordinatesSchema,
+  },
+  required: ['dayId', 'title', 'location', 'label', 'stops', 'optional', 'backup', 'logistics', 'dining', 'coordinates'],
+}
+
 const operationSchemas = [
   {
     type: 'object',
@@ -737,6 +970,21 @@ const operationSchemas = [
     },
     required: ['type', 'dayId', 'stopId'],
   },
+  {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      type: { type: 'string', enum: ['replace_days'] },
+      days: {
+        type: 'array',
+        minItems: 1,
+        maxItems: MAX_REWRITE_DAYS,
+        description: 'Complete replacements for only the interior days that change. Unlisted days remain exactly as they are.',
+        items: rewriteDaySchema,
+      },
+    },
+    required: ['type', 'days'],
+  },
 ]
 
 const assistantResponseSchema = {
@@ -760,7 +1008,7 @@ const assistantResponseSchema = {
     operations: {
       type: 'array',
       maxItems: MAX_PROPOSAL_OPERATIONS,
-      description: 'One to four operations for proposal; otherwise an empty array.',
+      description: 'For a small proposal, one to four stop operations. For a broad proposal, exactly one replace_days operation. Otherwise an empty array.',
       items: { anyOf: operationSchemas },
     },
   },
@@ -779,7 +1027,12 @@ RESPONSE AND ITINERARY ACTION MODE
 - First check for an existing or synonymous stop. If it is already present, use already_planned and identify the day.
 - Use needs_clarification only when the identity, action, or another detail genuinely blocks a safe proposal. Ask one short, specific question.
 - Put seasonal operation, future hours, weather, trail conditions, or schedule pressure in warnings; those caveats do not by themselves require clarification.
-- For a proposal, choose the geographically sensible day and smallest workable adjustment. Never move, update, or remove fixed stops. Use one to four operations.
+- For a small proposal, choose the geographically sensible day and smallest workable adjustment. Never move, update, or remove fixed stops. Use one to four stop operations.
+- For a broad request that changes multiple days, route direction, overnight bases, lodging transitions, or a large part of the trip, use exactly one replace_days operation. Include complete replacements for every changed interior day and no small stop operations. You may replace up to six interior days; never replace the first arrival day or final departure day.
+- A replace_days draft may change fixed details on interior days only when the requested route or overnight plan requires it. Preserve fixed stops that remain relevant. Put every lodging, shuttle, long drive, cancellation risk, and booking impact in warnings. The comparison screen will require the traveler to review the old and new plans before applying.
+- Each replacement must contain the full ordered stops plus title, overnight location, optional ideas, weather backup, logistics, and dining for that day. Unlisted days remain unchanged. Use fixed priority only for genuine travel, shuttle, or lodging anchors.
+- Compare each day’s ending base with the previous day’s ending base. Whenever they differ, that day must include both an explicit travel transition and a lodging stop. Include every following interior day needed to reconnect with the unchanged plan. The final rewritten interior day must return to the exact base expected by the protected departure day; for this trip, October 9 must include the return from Jasper and still end in Canmore before the October 10 airport departure.
+- If the traveler explicitly requests a broad rewrite, make a decisive, safe proposal when dates and destination are known; do not ask them to choose minor routing details that you can sensibly optimize. For Jasper, prefer an overnight plan over an exhausting Banff day trip and explain the lodging impact.
 - Use exact supplied dayId, stopId, fromDayId, toDayId, and afterStopId values. The app rejects invented IDs.
 - Use null for optional proposal fields rather than guessing. Never guess coordinates or URLs.
 - Copy the supplied current itinerary revision exactly into baseRevision for every resolution.
@@ -972,7 +1225,7 @@ export default {
           apiKey,
           `${systemPrompt}\n\n${assistantResponseInstructions}\n\nThe traveler used the dedicated itinerary-change shortcut, so resolve a concrete request as a proposal whenever it can be safely reviewed.`,
           proposalMessages,
-          2_400,
+          6_000,
         )
         const result = await response.json().catch(() => ({})) as OpenAIResponse
 
@@ -1000,8 +1253,14 @@ export default {
         const modelSources = extractSources(result)
         const parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
         if (!parsed) {
-          console.error('OpenAI proposal validation failed', result.status || 'unknown')
-          return json(502, { error: 'Miller Time returned a plan I could not safely validate. Please try again.' })
+          const reason = assistantOutputValidationReason(structured, itinerary, revision)
+          console.error('OpenAI proposal validation failed', reason, result.status || 'unknown')
+          return json(200, {
+            answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Please try the same request once more so I can rebuild a clean comparison.',
+            sources: modelSources,
+            resolution: 'needs_clarification',
+            searchedWeb: searchedWeb(result),
+          })
         }
 
         const sources = mergeProposalSources(modelSources, parsed.proposal)
@@ -1083,7 +1342,7 @@ export default {
         apiKey,
         `${systemPrompt}\n\n${assistantResponseInstructions}`,
         modelMessages,
-        2_000,
+        5_400,
       )
       const result = await response.json().catch(() => ({})) as OpenAIResponse
 
@@ -1106,8 +1365,15 @@ export default {
       let structured: unknown = null
       try { structured = JSON.parse(output) } catch { /* handled below */ }
       const modelSources = extractSources(result)
-      const parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
-      if (!parsed) return json(502, { error: 'Miller Time AI returned an answer I could not safely validate. Please try again.' })
+      let parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
+      if (!parsed) {
+        const reason = assistantOutputValidationReason(structured, itinerary, revision)
+        console.error('OpenAI chat validation failed', reason, result.status || 'unknown')
+        parsed = {
+          answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Ask me to try that rewrite once more and I’ll rebuild a clean comparison.',
+          resolution: 'needs_clarification',
+        }
+      }
 
       const answer = parsed.answer
       const sources = mergeProposalSources(modelSources, parsed.proposal)

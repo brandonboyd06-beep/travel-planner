@@ -22,6 +22,7 @@ export function ItineraryPage() {
   const [editorDraft, setEditorDraft] = useState('')
   const routeDay = plan.days.find((day) => day.id === routeId)
   const routePoints = useMemo(() => routeId === 'all' ? routePointsForPlan(plan) : routeDay ? routePointsForDay(routeDay) : [], [plan, routeDay, routeId])
+  const overnightBases = useMemo(() => [...new Set(plan.days.slice(0, -1).map((day) => day.location.replace(/\s+town$/i, '').trim()).filter(Boolean))], [plan.days])
 
   const openEditor = (dayId: string, draft = '') => {
     setEditorDraft(draft)
@@ -47,7 +48,7 @@ export function ItineraryPage() {
     <>
       <PageHeader
         title="Day-by-day itinerary"
-        subtitle={`${trip.dates} · 7 nights · Banff and Canmore · ${plan.revision ? `Revision ${plan.revision}` : 'Ready to personalize'}`}
+        subtitle={`${trip.dates} · 7 nights · ${overnightBases.join(', ')} · ${plan.revision ? `Revision ${plan.revision}` : 'Ready to personalize'}`}
         actions={<><Button className="secondary" onClick={() => window.print()}><Printer />Print</Button><Button className="primary" onClick={download}><Download />Download</Button></>}
       />
 

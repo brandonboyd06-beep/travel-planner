@@ -8,7 +8,8 @@ import { useCollaboration } from '../context/collaboration'
 import { useItinerary } from '../context/itinerary'
 import { compactItinerary } from '../lib/itineraryPlan'
 import { parseItineraryProposal, parseProposalSources, proposalRevision, type ProposalSourceLink } from '../lib/itineraryProposal'
-import type { ItineraryProposal } from '../types'
+import type { ItineraryPlan, ItineraryProposal } from '../types'
+import { ItineraryComparisonModal } from './ItineraryComparisonModal'
 import { MillerProposalCard, type MillerProposalState } from './MillerProposalCard'
 
 interface ChatMessage {
@@ -66,10 +67,13 @@ export function MillerTimeAI() {
   const [pending, setPending] = useState(false)
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [error, setError] = useState('')
+  const [reviewMessageId, setReviewMessageId] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const comparisonBasesRef = useRef(new Map<string, ItineraryPlan>())
   const cloudMemory = Boolean(user && trip)
   const messages = cloudMemory ? cloudMessages : localMessages
+  const reviewMessage = reviewMessageId ? messages.find((message) => message.id === reviewMessageId) : undefined
   const updateMessages = (update: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => {
     if (cloudMemory) setCloudMessages(update)
     else setLocalMessages(update)
@@ -134,11 +138,11 @@ export function MillerTimeAI() {
     if (!open) return
     inputRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape' && !reviewMessageId && !event.defaultPrevented) setOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open])
+  }, [open, reviewMessageId])
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -165,7 +169,7 @@ export function MillerTimeAI() {
 
       const { data, error: functionError } = await client.functions.invoke('miller-time-ai', {
         body: {
-          messages: nextMessages.filter((message) => message.id !== 'welcome').map(({ role, content: messageContent }) => ({ role, content: messageContent })),
+          messages: nextMessages.filter((message) => message.id !== 'welcome').slice(-12).map(({ role, content: messageContent }) => ({ role, content: messageContent })),
           tripId: cloudMemory ? trip?.id : undefined,
           baseRevision: requestedRevision,
           itinerary: requestedItinerary,
@@ -238,16 +242,19 @@ export function MillerTimeAI() {
   }
 
   const applyChatProposal = (message: ChatMessage) => {
-    if (!message.proposal || !canEdit) return
+    if (!message.proposal || !canEdit) return false
     try {
+      comparisonBasesRef.current.set(message.id, plan)
       applyAiProposal(message.proposal)
       updateProposalMessage(message.id, { proposalState: 'applied', proposalError: undefined })
       persistProposalState(message.id, 'applied')
       setError('')
+      return true
     } catch (caught) {
       const messageText = caught instanceof Error ? caught.message : 'That suggestion could not be applied.'
       const stale = /changed|no longer|before it could/i.test(messageText)
       updateProposalMessage(message.id, { proposalState: stale ? 'stale' : 'pending', proposalError: messageText })
+      return false
     }
   }
 
@@ -266,6 +273,8 @@ export function MillerTimeAI() {
 
   const resetChat = () => {
     setError('')
+    setReviewMessageId(null)
+    comparisonBasesRef.current.clear()
     if (!cloudMemory || !trip) {
       setLocalMessages([welcome])
       return
@@ -309,6 +318,7 @@ export function MillerTimeAI() {
           {messages.map((message) => {
             const proposalState = displayProposalState(message)
             const hasProposal = Boolean(message.proposal && proposalState !== 'dismissed')
+            const canReviewComparison = proposalState !== 'applied' || comparisonBasesRef.current.has(message.id)
             return (
               <div className={`miller-message ${message.role}${hasProposal ? ' with-proposal' : ''}`} key={message.id}>
                 <span>{message.role === 'assistant' ? 'Miller Time AI' : 'You'}</span>
@@ -321,7 +331,7 @@ export function MillerTimeAI() {
                   canApply={canEdit}
                   showSources={false}
                   error={message.proposalError}
-                  onApply={() => applyChatProposal(message)}
+                  onReview={canReviewComparison ? () => setReviewMessageId(message.id) : undefined}
                   onAdjust={() => adjustChatProposal(message)}
                   onDismiss={() => dismissChatProposal(message)}
                   onViewItinerary={() => { setOpen(false); navigate('/itinerary') }}
@@ -346,6 +356,14 @@ export function MillerTimeAI() {
           <small>Web results and tap lists can change. Always verify bookings, conditions, and who’s driving.</small>
         </form>
       </aside>
+      {reviewMessage?.proposal ? <ItineraryComparisonModal
+        proposal={reviewMessage.proposal}
+        currentPlan={comparisonBasesRef.current.get(reviewMessage.id) ?? plan}
+        canApply={canEdit}
+        applied={displayProposalState(reviewMessage) === 'applied'}
+        onApply={() => { if (applyChatProposal(reviewMessage)) setReviewMessageId(null) }}
+        onClose={() => setReviewMessageId(null)}
+      /> : null}
     </>
   )
 }

@@ -11,6 +11,7 @@ export interface ProposalSourceLink {
 }
 
 const kinds = new Set<ItineraryStopKind>(['travel', 'activity', 'scenic', 'meal', 'lodging', 'other'])
+const priorities = new Set<ItineraryStopPriority>(['fixed', 'core', 'optional'])
 const editablePriorities = new Set<ItineraryStopPriority>(['core', 'optional'])
 
 function boundedString(value: unknown, maximum: number) {
@@ -37,6 +38,12 @@ function coordinates(value: unknown): [number, number] | undefined {
   return [latitude, longitude]
 }
 
+function boundedStringList(value: unknown, maximumItems: number, maximumLength: number) {
+  if (!Array.isArray(value) || value.length > maximumItems) return undefined
+  const result = value.map((item) => boundedString(item, maximumLength))
+  return result.every((item): item is string => Boolean(item)) ? result : undefined
+}
+
 export function parseProposalSources(value: unknown): ProposalSourceLink[] {
   if (!Array.isArray(value)) return []
   const sources = new Map<string, ProposalSourceLink>()
@@ -55,6 +62,63 @@ export function parseItineraryOperation(value: unknown): ItineraryOperation | nu
   if (!value || typeof value !== 'object') return null
   const operation = value as Record<string, unknown>
   const type = operation.type
+
+  if (type === 'replace_days' && Array.isArray(operation.days)) {
+    if (operation.days.length < 1 || operation.days.length > 6) return null
+    const seenDays = new Set<string>()
+    let stopCount = 0
+    const days: Extract<ItineraryOperation, { type: 'replace_days' }>['days'] = []
+    for (const rawDayValue of operation.days) {
+      if (!rawDayValue || typeof rawDayValue !== 'object') return null
+      const rawDay = rawDayValue as Record<string, unknown>
+      const dayId = boundedString(rawDay.dayId, 80)
+      const title = boundedString(rawDay.title, 160)
+      const location = boundedString(rawDay.location, 120)
+      const label = rawDay.label == null ? null : boundedString(rawDay.label, 80)
+      const optional = boundedStringList(rawDay.optional, 6, 180)
+      const backup = boundedString(rawDay.backup, 500)
+      const logistics = boundedString(rawDay.logistics, 500)
+      const dining = boundedStringList(rawDay.dining, 6, 140)
+      if (
+        !dayId || seenDays.has(dayId) || !title || !location || (rawDay.label != null && !label)
+        || !Array.isArray(rawDay.stops) || rawDay.stops.length < 1 || rawDay.stops.length > 12
+        || !optional || !backup || !logistics || !dining
+      ) return null
+
+      seenDays.add(dayId)
+      stopCount += rawDay.stops.length
+      if (stopCount > 64) return null
+      const names = new Map<string, ItineraryStopKind>()
+      const stops: Extract<ItineraryOperation, { type: 'replace_days' }>['days'][number]['stops'] = []
+      for (const rawStopValue of rawDay.stops) {
+        if (!rawStopValue || typeof rawStopValue !== 'object') return null
+        const rawStop = rawStopValue as Record<string, unknown>
+        const name = boundedString(rawStop.name, 120)
+        if (!name) return null
+        const normalizedName = name.toLocaleLowerCase('en-CA').replace(/[^a-z0-9]+/g, ' ').trim()
+        const kind = kinds.has(rawStop.kind as ItineraryStopKind) ? rawStop.kind as ItineraryStopKind : 'other'
+        const priority = priorities.has(rawStop.priority as ItineraryStopPriority) ? rawStop.priority as ItineraryStopPriority : 'core'
+        const priorKind = names.get(normalizedName)
+        if (!normalizedName || (priorKind && !(['travel', 'lodging'].includes(priorKind) && ['travel', 'lodging'].includes(kind)))) return null
+        names.set(normalizedName, kind)
+        if (priority === 'fixed' && kind !== 'travel' && kind !== 'lodging') return null
+        stops.push({
+          name,
+          kind,
+          priority,
+          mapsQuery: boundedString(rawStop.mapsQuery, 180) ?? name,
+          coordinates: coordinates(rawStop.coordinates),
+          note: boundedString(rawStop.note, 300),
+          sourceUrl: safeUrl(rawStop.sourceUrl),
+        })
+      }
+
+      const dayCoordinates = coordinates(rawDay.coordinates)
+      if (rawDay.coordinates != null && !dayCoordinates) return null
+      days.push({ dayId, title, location, label: label ?? null, stops, optional, backup, logistics, dining, coordinates: dayCoordinates })
+    }
+    return { type, days }
+  }
 
   if (type === 'add_stop' && operation.stop && typeof operation.stop === 'object') {
     const dayId = boundedString(operation.dayId, 80)
@@ -128,6 +192,7 @@ export function parseItineraryProposal(
   if (!Array.isArray(proposal.operations) || proposal.operations.length < 1 || proposal.operations.length > 4) return null
   const operations = proposal.operations.map(parseItineraryOperation)
   if (operations.some((operation) => !operation)) return null
+  if (operations.some((operation) => operation?.type === 'replace_days') && operations.length !== 1) return null
   const summary = boundedString(proposal.summary, 220)
   const rationale = boundedString(proposal.rationale, 700)
   if (!summary || !rationale) return null

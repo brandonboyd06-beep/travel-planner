@@ -2,6 +2,14 @@ import { Check, ExternalLink, Eye, RefreshCw, Sparkles, X } from 'lucide-react'
 import type { ItineraryProposal } from '../types'
 import { Button } from './ui'
 
+function proposalDayLabel(dayId: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayId)
+  if (!match) return dayId
+  const [, year, month, day] = match
+  return new Intl.DateTimeFormat('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+    .format(new Date(`${year}-${month}-${day}T12:00:00Z`))
+}
+
 export type MillerProposalState = 'pending' | 'applied' | 'dismissed' | 'stale'
 
 interface MillerProposalCardProps {
@@ -11,7 +19,7 @@ interface MillerProposalCardProps {
   canApply?: boolean
   showSources?: boolean
   error?: string
-  onApply?: () => void
+  onReview?: () => void
   onAdjust?: () => void
   onDismiss?: () => void
   onViewItinerary?: () => void
@@ -24,7 +32,7 @@ export function MillerProposalCard({
   canApply = true,
   showSources = true,
   error,
-  onApply,
+  onReview,
   onAdjust,
   onDismiss,
   onViewItinerary,
@@ -33,7 +41,15 @@ export function MillerProposalCard({
 
   const applied = state === 'applied'
   const stale = state === 'stale'
-  const eyebrow = applied ? 'Change applied' : stale ? 'Plan needs a refresh' : 'Miller Time found the best fit'
+  const rewrite = proposal.operations.find((operation) => operation.type === 'replace_days')
+  const rewriteDays = rewrite?.days ?? []
+  const eyebrow = applied
+    ? 'Change applied'
+    : stale
+      ? 'Plan needs a refresh'
+      : rewriteDays.length
+        ? 'Multi-day rewrite ready to compare'
+        : 'Miller Time found the best fit'
 
   return (
     <article className={`miller-proposal${compact ? ' compact' : ''}${applied ? ' applied' : ''}${stale ? ' stale' : ''}`} aria-live={compact ? undefined : 'polite'}>
@@ -42,6 +58,11 @@ export function MillerProposalCard({
         <span>{eyebrow}</span>
         <h3>{proposal.summary}</h3>
         <p>{proposal.rationale}</p>
+        <div className="proposal-impact">
+          <strong>{rewriteDays.length ? `${rewriteDays.length}-day rewrite` : `${proposal.operations.length} coordinated edit${proposal.operations.length === 1 ? '' : 's'}`}</strong>
+          <span>Original and new plans open side by side before anything changes.</span>
+        </div>
+        {rewriteDays.length ? <details className="proposal-day-preview"><summary>Days in this rewrite</summary><ul>{rewriteDays.map((day) => <li key={day.dayId}><strong>{proposalDayLabel(day.dayId)}</strong><span>{day.title} · Stay: {day.location}</span></li>)}</ul></details> : null}
         {proposal.warnings.length ? <ul>{proposal.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
         {showSources && proposal.sources.length ? (
           <div className="proposal-sources">
@@ -55,6 +76,7 @@ export function MillerProposalCard({
         {applied ? (
           <>
             <span className="proposal-applied"><Check />Itinerary updated</span>
+            {onReview ? <Button className="secondary" type="button" onClick={onReview}><Eye />View comparison</Button> : null}
             {onViewItinerary ? <Button className="secondary" type="button" onClick={onViewItinerary}><Eye />View itinerary</Button> : null}
           </>
         ) : stale ? (
@@ -64,7 +86,7 @@ export function MillerProposalCard({
           </>
         ) : (
           <>
-            {onApply ? <Button className="success" type="button" onClick={onApply} disabled={!canApply}><Check />Apply change</Button> : null}
+            {onReview ? <Button className="success" type="button" onClick={onReview}><Eye />Review comparison</Button> : null}
             {onAdjust ? <Button className="secondary" type="button" onClick={onAdjust}><Sparkles />Tweak it</Button> : null}
             {onDismiss ? <button className="proposal-dismiss" type="button" onClick={onDismiss}><X />Not now</button> : null}
           </>
