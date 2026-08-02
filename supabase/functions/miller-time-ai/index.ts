@@ -683,7 +683,75 @@ function assistantOutputValidationReason(input: unknown, itinerary: CompactItine
   if (!itinerary) return 'missing_itinerary'
   if (!boundedString(input.summary, 220)) return 'invalid_summary'
   if (!boundedString(input.rationale, 600)) return 'invalid_rationale'
-  return 'invalid_operations'
+  return proposalOperationsValidationReason(input.operations, itinerary)
+}
+
+function proposalOperationsValidationReason(value: unknown, itinerary: CompactItinerary) {
+  if (!Array.isArray(value)) return 'operations_not_array'
+  if (value.length < 1) return 'operations_empty'
+  if (value.length > MAX_PROPOSAL_OPERATIONS) return 'operations_too_many'
+
+  const rewrite = value.find((operation) => isRecord(operation) && operation.type === 'replace_days')
+  if (!rewrite) return 'invalid_small_operations'
+  if (value.length !== 1 || !hasOnlyKeys(rewrite, ['type', 'days'])) return 'rewrite_mixed_or_unexpected_keys'
+  if (!Array.isArray(rewrite.days)) return 'rewrite_days_not_array'
+  if (rewrite.days.length < 1) return 'rewrite_days_empty'
+  if (rewrite.days.length > MAX_REWRITE_DAYS) return 'rewrite_days_too_many'
+
+  const existingDays = new Map(itinerary.days.map((day) => [day.id, day]))
+  const protectedDayIds = new Set([itinerary.days[0]?.id, itinerary.days.at(-1)?.id])
+  const replacements: ProposalDayReplacement[] = []
+  const seenDayIds = new Set<string>()
+  let stopCount = 0
+
+  for (const [dayIndex, rawDay] of rewrite.days.entries()) {
+    if (!isRecord(rawDay)) return `rewrite_day_${dayIndex}_not_object`
+    if (!hasOnlyKeys(rawDay, ['dayId', 'title', 'location', 'label', 'stops', 'optional', 'backup', 'logistics', 'dining', 'coordinates'])) {
+      return `rewrite_day_${dayIndex}_unexpected_keys`
+    }
+    const dayId = boundedString(rawDay.dayId, 80)
+    if (!dayId || !existingDays.has(dayId)) return `rewrite_day_${dayIndex}_unknown_id`
+    if (protectedDayIds.has(dayId)) return `rewrite_day_${dayIndex}_protected`
+    if (seenDayIds.has(dayId)) return `rewrite_day_${dayIndex}_duplicate_id`
+    if (!Array.isArray(rawDay.stops)) return `rewrite_day_${dayIndex}_stops_not_array`
+    if (rawDay.stops.length < 1 || rawDay.stops.length > MAX_REWRITE_STOPS_PER_DAY) return `rewrite_day_${dayIndex}_stop_count`
+
+    for (const [stopIndex, rawStop] of rawDay.stops.entries()) {
+      if (!isRecord(rawStop)) return `rewrite_day_${dayIndex}_stop_${stopIndex}_not_object`
+      if (rawStop.priority === 'fixed' && rawStop.kind !== 'travel' && rawStop.kind !== 'lodging') {
+        return `rewrite_day_${dayIndex}_stop_${stopIndex}_fixed_nonlogistics`
+      }
+      if (rawStop.coordinates != null && !validCoordinates(rawStop.coordinates)) {
+        return `rewrite_day_${dayIndex}_stop_${stopIndex}_coordinates`
+      }
+    }
+    if (rawDay.coordinates != null && !validCoordinates(rawDay.coordinates)) return `rewrite_day_${dayIndex}_coordinates`
+
+    const replacement = parseDayReplacement(rawDay, new Set<string>())
+    if (!replacement) return `rewrite_day_${dayIndex}_invalid_shape`
+    seenDayIds.add(dayId)
+    stopCount += replacement.stops.length
+    if (stopCount > MAX_REWRITE_STOPS) return 'rewrite_stops_too_many'
+    replacements.push(replacement)
+  }
+
+  const replacementById = new Map(replacements.map((replacement) => [replacement.dayId, replacement]))
+  for (const replacement of replacements) {
+    const currentIndex = itinerary.days.findIndex((day) => day.id === replacement.dayId)
+    const currentDay = itinerary.days[currentIndex]
+    const previousDay = itinerary.days[currentIndex - 1]
+    const nextDay = itinerary.days[currentIndex + 1]
+    const previousEffectiveDay = previousDay ? replacementById.get(previousDay.id) ?? previousDay : undefined
+    const baseChangesDuringDay = Boolean(previousEffectiveDay && normalizeBase(previousEffectiveDay.location || '') !== normalizeBase(replacement.location))
+    if (baseChangesDuringDay && !replacement.stops.some((stop) => stop.kind === 'travel')) return `rewrite_${replacement.dayId}_missing_travel`
+    if (baseChangesDuringDay && !replacement.stops.some((stop) => stop.kind === 'lodging')) return `rewrite_${replacement.dayId}_missing_lodging`
+    const disconnectsUnchangedNextDay = nextDay
+      && !replacementById.has(nextDay.id)
+      && normalizeBase(currentDay.location || '') !== normalizeBase(replacement.location)
+    if (disconnectsUnchangedNextDay) return `rewrite_${replacement.dayId}_disconnects_next_day`
+  }
+
+  return 'invalid_operations_unknown'
 }
 
 function clientKey(request: Request) {
@@ -1259,6 +1327,7 @@ export default {
             answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Please try the same request once more so I can rebuild a clean comparison.',
             sources: modelSources,
             resolution: 'needs_clarification',
+            validationCode: reason,
             searchedWeb: searchedWeb(result),
           })
         }
@@ -1330,19 +1399,32 @@ export default {
       && (suppliedRevision as number) <= 2_147_483_647
       ? suppliedRevision as number
       : 0
-    const modelMessages = messages.map((message, index) => index === messages.length - 1
-      ? {
-          ...message,
-          content: `${message.content}\n\n<untrusted_current_app_context>\nPage: ${page}\nCurrent itinerary revision: ${revision}\nBrowser-local planning preferences: ${preferences}\nCurrent itinerary data: ${itinerary ? JSON.stringify(itinerary) : 'Unavailable; do not create an itinerary proposal.'}\n</untrusted_current_app_context>`,
-        }
-      : message)
+    const broadRewriteRequest = Boolean(
+      itinerary
+      && /\b(?:rework|rewrite|rebuild|overhaul|replan|redo|replace|restructure)\b/i.test(question)
+      && /\b(?:itinerary|trip|schedule|portion|segment|days?|stay|overnights?|bases?|route)\b/i.test(question),
+    )
+    const modelMessages: ChatMessage[] = broadRewriteRequest
+      ? [{
+          role: 'user',
+          content: `Traveler change request:\n${question}\n\nCurrent itinerary revision: ${revision}\n<current_itinerary_data>\n${JSON.stringify(itinerary)}\n</current_itinerary_data>`,
+        }]
+      : messages.map((message, index) => index === messages.length - 1
+        ? {
+            ...message,
+            content: `${message.content}\n\n<untrusted_current_app_context>\nPage: ${page}\nCurrent itinerary revision: ${revision}\nBrowser-local planning preferences: ${preferences}\nCurrent itinerary data: ${itinerary ? JSON.stringify(itinerary) : 'Unavailable; do not create an itinerary proposal.'}\n</untrusted_current_app_context>`,
+          }
+        : message)
+    const responseInstructions = broadRewriteRequest
+      ? `${systemPrompt}\n\n${assistantResponseInstructions}\n\nThe traveler requested a broad itinerary rewrite in chat. Focus on the latest self-contained request and resolve it as a complete reviewable proposal whenever it can be planned safely.`
+      : `${systemPrompt}\n\n${assistantResponseInstructions}`
 
     try {
       const response = await invokeOpenAI(
         apiKey,
-        `${systemPrompt}\n\n${assistantResponseInstructions}`,
+        responseInstructions,
         modelMessages,
-        5_400,
+        broadRewriteRequest ? 6_000 : 5_400,
       )
       const result = await response.json().catch(() => ({})) as OpenAIResponse
 
@@ -1366,8 +1448,10 @@ export default {
       try { structured = JSON.parse(output) } catch { /* handled below */ }
       const modelSources = extractSources(result)
       let parsed = parseAssistantOutput(structured, itinerary, revision, modelSources)
+      let validationCode: string | undefined
       if (!parsed) {
         const reason = assistantOutputValidationReason(structured, itinerary, revision)
+        validationCode = reason
         console.error('OpenAI chat validation failed', reason, result.status || 'unknown')
         parsed = {
           answer: 'I mapped the change, but the day-by-day draft did not pass the final safety check. Nothing changed. Ask me to try that rewrite once more and I’ll rebuild a clean comparison.',
@@ -1406,6 +1490,7 @@ export default {
         answer,
         sources,
         resolution: parsed.resolution,
+        ...(validationCode ? { validationCode } : {}),
         ...(parsed.proposal ? { proposal: parsed.proposal } : {}),
         ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
         memory: memoryClient ? 'cloud' : 'local',
