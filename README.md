@@ -59,7 +59,7 @@ All optional planning choices are stored in `localStorage`, namespaced with `ban
 
 The first local edit shows a small, dismissible confirmation explaining that the change is saved only on that device. Choosing **Sign in** opens the private password login. After sign-in, existing local choices are copied to the shared trip and subsequent edits sync through Supabase Realtime. Signing out leaves the browser-local copy intact.
 
-The trip owner prepares each guest account from the **Invite** button. MT Travel creates a temporary password that the owner sends directly to the guest; the guest must replace it on first sign-in. Public signup, email confirmation, magic links, and email password resets are disabled. If a guest forgets a password, the owner can tap **New password** beside that person and send the new temporary login details.
+The trip owner prepares each guest account from the **Invite** button. MT Travel creates a temporary password that the owner sends directly to the guest; the guest must replace it on first sign-in. Public signup, email confirmation, magic links, and email password resets are disabled. Until a guest actually signs in, the member list says **Has not signed in yet** and keeps a prominent **Send invite** action beside their name. That action creates fresh credentials and restores the **Email invite** and **Copy invite** buttons whenever the original temporary password was missed or lost.
 
 Database migrations live in `supabase/migrations/`. The dedicated `travel_planner` schema contains:
 

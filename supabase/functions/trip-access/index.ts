@@ -64,8 +64,9 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
   const authorization = request.headers.get('authorization')
-  if (!supabaseUrl || !serviceRoleKey) return json(request, 503, { error: 'Trip access is not configured.' })
+  if (!supabaseUrl || !serviceRoleKey || !anonKey) return json(request, 503, { error: 'Trip access is not configured.' })
   if (!authorization?.toLowerCase().startsWith('bearer ')) return json(request, 401, { error: 'Sign in before managing the guest list.' })
 
   let payload: AccessRequest
@@ -88,6 +89,10 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  const ownerClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 
   try {
     const token = authorization.slice(7).trim()
@@ -108,7 +113,7 @@ Deno.serve(async (request) => {
     const { data: membership, error: membershipError } = await admin
       .schema('travel_planner')
       .from('trip_members')
-      .select('id, user_id, role, display_name')
+      .select('id, user_id, role, display_name, accepted_at')
       .eq('trip_id', tripId)
       .ilike('invited_email', email)
       .maybeSingle()
@@ -150,16 +155,20 @@ Deno.serve(async (request) => {
 
     const memberValues = {
       trip_id: tripId,
-      user_id: account.id,
+      // Keep a new or not-yet-used invite unattached until the guest's first
+      // successful sign-in. Existing joined members keep their account link.
+      user_id: membership?.accepted_at ? (membership.user_id ?? account.id) : null,
       invited_email: email,
       display_name: displayName || membership?.display_name || null,
       role: 'editor',
       invited_by: caller.id,
-      accepted_at: new Date().toISOString(),
+      // Preparing a password is not the same as the guest joining.
+      // The app fills this timestamp on their first successful sign-in.
+      accepted_at: membership?.accepted_at ?? null,
     }
     const memberResult = membership
-      ? await admin.schema('travel_planner').from('trip_members').update(memberValues).eq('id', membership.id)
-      : await admin.schema('travel_planner').from('trip_members').insert(memberValues)
+      ? await ownerClient.schema('travel_planner').from('trip_members').update(memberValues).eq('id', membership.id)
+      : await ownerClient.schema('travel_planner').from('trip_members').insert(memberValues)
 
     if (memberResult.error) {
       if (createdAccount) await admin.auth.admin.deleteUser(account.id)

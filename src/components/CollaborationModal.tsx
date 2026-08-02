@@ -268,7 +268,8 @@ export function CollaborationModal() {
     try {
       const prepared = await resetMemberPassword(member)
       setReadyInvite(prepared)
-      setMessage(`New temporary password ready for ${member.display_name || member.invited_email}. Their old password no longer works.`)
+      setMessage(`Invite ready for ${member.display_name || member.invited_email}. Tap Email invite or Copy invite below before leaving this page.`)
+      window.setTimeout(() => document.getElementById('ready-invite-card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0)
     } catch (caught) {
       setFormError(caught instanceof Error ? caught.message : 'Unable to reset that login.')
     } finally {
@@ -388,21 +389,41 @@ export function CollaborationModal() {
                 <div className={`sync-summary ${status}`} aria-live="polite"><span>{status === 'syncing' ? <LoaderCircle className="spin" /> : status === 'error' ? <X /> : <Check />}{status === 'syncing' ? 'Saving…' : status === 'error' ? 'Not saved to the group' : 'Synced'}</span><span>{trip.role}</span></div>
                 {status === 'error' ? <div className="form-message error"><span>{error || 'The last change is still on this device but did not reach the group.'}</span><button type="button" onClick={() => void retrySync()}>Try again</button></div> : null}
                 <div className="member-list">
-                  <div className="member-list-heading"><strong>Trip members</strong><span>{members.length}</span></div>
-                  {members.map((member) => (
-                    <div className="member-row" key={member.id}>
-                      <span className="member-avatar">{(member.display_name || member.invited_email).slice(0, 1).toUpperCase()}</span>
-                      <div><strong>{member.display_name || member.invited_email}</strong><span>{member.accepted_at ? member.invited_email : 'Login not prepared yet'}</span></div>
-                      <div className="member-actions"><small>{member.role}</small>{trip.role === 'owner' && member.role !== 'owner' ? <button type="button" disabled={resettingMemberId === member.id} onClick={() => void resetAccess(member)}>{resettingMemberId === member.id ? 'Working…' : 'Reset password'}</button> : null}</div>
-                    </div>
-                  ))}
+                  <div className="member-list-heading"><strong>People on this trip</strong><span>{members.length}</span></div>
+                  {members.map((member) => {
+                    const hasJoined = Boolean(member.accepted_at)
+                    const memberStatus = member.role === 'owner' ? 'Trip owner' : hasJoined ? 'Joined the trip' : 'Has not signed in yet'
+                    return (
+                      <div className="member-row" key={member.id}>
+                        <span className="member-avatar">{(member.display_name || member.invited_email).slice(0, 1).toUpperCase()}</span>
+                        <div><strong>{member.display_name || member.invited_email}</strong><span>{member.invited_email}</span><small className={`member-status ${hasJoined ? 'joined' : 'waiting'}`}>{memberStatus}</small></div>
+                        <div className="member-actions">
+                          {trip.role === 'owner' && member.role !== 'owner' ? (
+                            <button type="button" disabled={resettingMemberId === member.id} onClick={() => void resetAccess(member)}>
+                              {resettingMemberId === member.id ? 'Making invite…' : hasJoined ? 'Make new login' : 'Send invite'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {trip.role === 'owner' ? (
                   <>
+                    {readyInvite ? (
+                      <section id="ready-invite-card" className="invite-share-card" aria-label={`Share login with ${readyInvite.displayName || readyInvite.email}`}>
+                        <div><Mail /><span><strong>Step 2 · Send this invite now</strong><small>This temporary password only appears here. If it gets lost, tap Send invite beside their name to make a new one.</small></span></div>
+                        <dl className="invite-credentials"><div><dt>Email</dt><dd>{readyInvite.email}</dd></div><div><dt>Temporary password</dt><dd>{readyInvite.temporaryPassword}</dd></div></dl>
+                        <div className="invite-share-actions">
+                          <a className="button primary" href={inviteEmailHref}><Mail size={14} />Email invite</a>
+                          <Button className="secondary" type="button" onClick={() => void copyInviteDetails()}><Copy size={14} />{linkCopied ? 'Invite copied' : 'Copy invite'}</Button>
+                        </div>
+                      </section>
+                    ) : null}
                     <section className="invite-howto" aria-label="How to invite someone">
-                      <strong>Invite someone in 3 easy steps</strong>
-                      <ol><li>Type their name and email.</li><li>Tap <b>Create invite.</b></li><li>Tap <b>Email invite</b> or <b>Copy invite.</b></li></ol>
+                      <strong>Adding somebody new?</strong>
+                      <ol><li>Type their name and email below.</li><li>Tap <b>Create invite.</b></li><li>Use the big <b>Email invite</b> or <b>Copy invite</b> button that appears.</li></ol>
                     </section>
                     <form className="invite-form" onSubmit={submitInvite}>
                       <div><UserPlus size={17} /><div><strong>Step 1 · Who are you inviting?</strong><span>MT Travel will make their one-time password.</span></div></div>
@@ -412,16 +433,6 @@ export function CollaborationModal() {
                         <Button className="primary" disabled={inviteSubmitting} type="submit">{inviteSubmitting ? <LoaderCircle className="spin" size={15} /> : <UserPlus size={15} />}{inviteSubmitting ? 'Creating…' : 'Create invite'}</Button>
                       </div>
                     </form>
-                    {readyInvite ? (
-                      <section className="invite-share-card" aria-label={`Share login with ${readyInvite.displayName || readyInvite.email}`}>
-                        <div><Check /><span><strong>{readyInvite.displayName || readyInvite.email} can sign in now</strong><small>Send these one-time details. MT Travel asks them to choose a private password immediately.</small></span></div>
-                        <dl className="invite-credentials"><div><dt>Email</dt><dd>{readyInvite.email}</dd></div><div><dt>Temporary password</dt><dd>{readyInvite.temporaryPassword}</dd></div></dl>
-                        <div className="invite-share-actions">
-                          <a className="button primary" href={inviteEmailHref}><Mail size={14} />Email invite</a>
-                          <Button className="secondary" type="button" onClick={() => void copyInviteDetails()}><Copy size={14} />{linkCopied ? 'Invite copied' : 'Copy invite'}</Button>
-                        </div>
-                      </section>
-                    ) : null}
                   </>
                 ) : null}
 

@@ -121,16 +121,15 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       }
 
       let membership = acceptedMembership
-        ? { trip_id: acceptedMembership.trip_id, role: acceptedMembership.role }
+        ? { id: acceptedMembership.id, trip_id: acceptedMembership.trip_id, role: acceptedMembership.role, accepted_at: new Date().toISOString() }
         : null
 
       if (!membership) {
         const membershipResult = await client
           .schema('travel_planner')
           .from('trip_members')
-          .select('trip_id, role')
+          .select('id, trip_id, role, accepted_at')
           .eq('user_id', nextUser.id)
-          .not('accepted_at', 'is', null)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
@@ -142,6 +141,15 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       if (!membership) {
         await client.auth.signOut({ scope: 'local' })
         throw new Error('This account is not on the Banff trip guest list. Ask Brandon to add this email, then try again.')
+      }
+
+      if (membership.id && !membership.accepted_at) {
+        const acceptedResult = await client
+          .schema('travel_planner')
+          .from('trip_members')
+          .update({ accepted_at: new Date().toISOString() })
+          .eq('id', membership.id)
+        if (acceptedResult.error) throw acceptedResult.error
       }
 
       const tripId = membership.trip_id as string

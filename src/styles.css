@@ -856,6 +856,9 @@ h1, h2, h3, p { margin-top: 0; }
 .member-row strong { overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .member-row div span { overflow: hidden; text-overflow: ellipsis; color: #7a8798; font-size: 8px; }
 .member-row small { color: #526173; font-size: 8px; text-transform: capitalize; }
+.member-row .member-status { width: fit-content; margin-top: 3px; padding: 2px 6px; border-radius: 999px; font-size: 8px; font-weight: 800; }
+.member-row .member-status.joined { background: #e8f7ef; color: #08714f; }
+.member-row .member-status.waiting { background: #fff4d8; color: #8a5b00; }
 .member-actions { display: flex !important; align-items: flex-end; gap: 4px !important; }
 .member-actions button { min-height: 28px; padding: 0 7px; border: 1px solid #cbdbe8; border-radius: 6px; background: #f7fbff; color: #0f5bb7; font-size: 8px; font-weight: 750; cursor: pointer; white-space: nowrap; }
 .member-actions button:hover { background: #eaf3ff; }
@@ -871,7 +874,7 @@ h1, h2, h3, p { margin-top: 0; }
 .invite-form span { color: #667085; font-size: 8px; }
 .invite-fields { display: grid; grid-template-columns: .75fr 1.25fr auto; gap: 7px; }
 .invite-fields .button { min-height: 38px; padding-inline: 11px; white-space: nowrap; }
-.invite-share-card { margin-top: 10px; padding: 12px; border: 1px solid #b9ddcd; border-radius: 9px; background: linear-gradient(115deg, #f0faf5, #fffaf0); display: grid; gap: 10px; }
+.invite-share-card { margin-top: 13px; padding: 14px; border: 2px solid #0d513f; border-radius: 9px; background: linear-gradient(115deg, #f0faf5, #fffaf0); display: grid; gap: 10px; box-shadow: 0 8px 22px rgb(8 62 49 / 12%); }
 .invite-share-card > div:first-child { display: flex; align-items: flex-start; gap: 9px; }
 .invite-share-card > div:first-child > svg { width: 27px; height: 27px; padding: 6px; border-radius: 50%; background: #0d513f; color: #f2c66a; flex: 0 0 auto; }
 .invite-share-card > div:first-child span { display: grid; gap: 3px; }
@@ -882,7 +885,7 @@ h1, h2, h3, p { margin-top: 0; }
 .invite-credentials dt { color: #667085; font-size: 8px; font-weight: 700; }
 .invite-credentials dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #20352f; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; font-weight: 750; }
 .invite-share-actions { display: flex; gap: 7px; flex-wrap: wrap; }
-.invite-share-actions .button { min-height: 36px; flex: 1; font-size: 9px; }
+.invite-share-actions .button { min-height: 42px; flex: 1; font-size: 10px; }
 .invite-share-card code { overflow: hidden; padding: 7px 8px; border: 1px solid #dbe5e1; border-radius: 6px; background: rgb(255 255 255 / 78%); color: #526173; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .account-actions { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .account-actions .button { margin: 0; }
