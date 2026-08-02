@@ -828,6 +828,12 @@ h1, h2, h3, p { margin-top: 0; }
 .password-field > div > button:hover { background: #eef4fa; color: var(--blue); }
 .collaboration-form .button { grid-column: 1 / -1; }
 .collaboration-form > small { grid-column: 1 / -1; color: #667085; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 8px; }
+.signin-steps { margin: 14px 0 17px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.signin-steps article { min-height: 76px; padding: 10px; border: 1px solid #dbe5e1; border-radius: 8px; background: #f7fbf9; display: flex; align-items: flex-start; gap: 8px; }
+.signin-steps article > span { width: 22px; height: 22px; border-radius: 50%; background: #0d513f; color: #fff; display: grid; flex: 0 0 auto; place-items: center; font-size: 10px; font-weight: 800; }
+.signin-steps article div { display: grid; gap: 3px; }
+.signin-steps strong { color: #0a3e34; font-size: 10px; line-height: 1.25; }
+.signin-steps small { color: #667085; font-size: 9px; line-height: 1.35; }
 .auth-manual-help { grid-column: 1 / -1; margin: 0; padding: 10px; border: 1px solid #d9e5ef; border-radius: 8px; background: #f7fbff; color: #526173; display: flex; align-items: flex-start; gap: 8px; font-size: 9px; line-height: 1.45; }
 .auth-manual-help > svg { flex: 0 0 auto; margin-top: 1px; color: var(--blue); }
 .auth-manual-help strong { color: #26364a; }
@@ -855,6 +861,9 @@ h1, h2, h3, p { margin-top: 0; }
 .member-actions button:hover { background: #eaf3ff; }
 .member-actions button:disabled { opacity: .6; cursor: wait; }
 .invite-form { margin-top: 13px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; }
+.invite-howto { margin-top: 13px; padding: 13px; border: 1px solid #b9ddcd; border-radius: 8px; background: #f2faf6; }
+.invite-howto > strong { color: #0a3e34; font-size: 11px; }
+.invite-howto ol { margin: 8px 0 0; padding-left: 19px; color: #475467; font-size: 10px; line-height: 1.7; }
 .invite-form > div:first-child { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
 .invite-form > div:first-child > svg { color: var(--blue); }
 .invite-form > div:first-child div { display: grid; gap: 2px; }
@@ -875,6 +884,8 @@ h1, h2, h3, p { margin-top: 0; }
 .invite-share-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .invite-share-actions .button { min-height: 36px; flex: 1; font-size: 9px; }
 .invite-share-card code { overflow: hidden; padding: 7px 8px; border: 1px solid #dbe5e1; border-radius: 6px; background: rgb(255 255 255 / 78%); color: #526173; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.account-actions { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.account-actions .button { margin: 0; }
 .modal-signout { width: 100%; margin-top: 13px; }
 .form-message { margin: 12px 0 0; padding: 9px 10px; border-radius: 6px; font-size: 9px; line-height: 1.4; }
 .form-message.success { color: #08714f; background: #e7f8f0; }
@@ -1277,7 +1288,9 @@ h1, h2, h3, p { margin-top: 0; }
   .help-guide-page-action { min-height: 45px; padding: 0 20px 18px 87px; }
   .help-guide-page-action .button { width: 100%; }
   .help-guide-dialog > footer { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
-  .storage-choice-grid, .collaboration-form { grid-template-columns: 1fr; }
+  .storage-choice-grid, .signin-steps, .collaboration-form { grid-template-columns: 1fr; }
+  .signin-steps article { min-height: auto; }
+  .account-actions { grid-template-columns: 1fr; }
   .collaboration-form .button, .collaboration-form > small { grid-column: auto; }
   .invite-fields { grid-template-columns: 1fr; }
   .miller-panel { top: auto; bottom: 0; width: 100%; height: min(86dvh, 720px); border-left: 0; border-top: 1px solid #cfd9e6; border-radius: 15px 15px 0 0; transform: translateY(105%); }
