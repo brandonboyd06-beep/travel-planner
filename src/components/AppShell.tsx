@@ -6,6 +6,7 @@ import {
 import { trip } from '../data/trip'
 import { AppLink, usePathname } from './AppLink'
 import { CollaborationStatusButton, InviteTripButton } from './CollaborationModal'
+import { HelpGuide } from './HelpGuide'
 import { MillerTimeAI } from './MillerTimeAI'
 
 const nav = [
@@ -64,7 +65,7 @@ function TopBar({ openMenu }: { openMenu: () => void }) {
           <AppLink key={to} href={to} exact={to === '/'}><Icon size={16} /><span>{label.replace('Transportation & Shuttles', 'Transport').replace('Budget & Expenses', 'Budget').replace('Book & Reserve', 'Book')}</span></AppLink>
         ))}
       </nav>
-      <div className="topbar-utility"><div className="trip-countdown"><Route size={16} /><span>63 days to go</span></div><InviteTripButton /><CollaborationStatusButton /></div>
+      <div className="topbar-utility"><div className="trip-countdown"><Route size={16} /><span>63 days to go</span></div><HelpGuide /><InviteTripButton /><CollaborationStatusButton /></div>
     </header>
   )
 }

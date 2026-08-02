@@ -47,7 +47,7 @@ export function InviteTripButton() {
   }
 
   return (
-    <button className="invite-trip-button" type="button" onClick={openInvite} aria-controls="collaboration-dialog">
+    <button className="invite-trip-button" type="button" onClick={openInvite} aria-label="Invite trip members" aria-controls="collaboration-dialog">
       <UserPlus size={16} />
       <span>Invite</span>
     </button>
