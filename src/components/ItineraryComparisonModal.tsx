@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, Check, Copy, GitCompareArrows, Share2, X } from 'lucide-react'
+import { AlertTriangle, BedDouble, Check, Copy, GitCompareArrows, Share2, X } from 'lucide-react'
 import { previewProposal, proposalAffectedDayIds } from '../lib/itineraryPlan'
+import { lodgingOptionsForSegment, lodgingSegmentsForItinerary } from '../lib/lodgingPlan'
 import type { ItineraryDay, ItineraryPlan, ItineraryProposal, ItineraryStop } from '../types'
+import { AppLink } from './AppLink'
 import { Button } from './ui'
 
 interface ItineraryComparisonModalProps {
@@ -115,6 +117,18 @@ function comparisonText(
   ]
   if (proposal.warnings.length) lines.push('', 'Heads-up:', ...proposal.warnings.map((warning) => `- ${warning}`))
 
+  const originalStays = lodgingSegmentsForItinerary(currentPlan)
+  const proposedStays = lodgingSegmentsForItinerary(proposedPlan)
+  if (JSON.stringify(originalStays.map((stay) => [stay.baseKey, stay.nights])) !== JSON.stringify(proposedStays.map((stay) => [stay.baseKey, stay.nights]))) {
+    lines.push(
+      '',
+      'Lodging impact:',
+      `Original stays: ${originalStays.map((stay) => `${stay.baseName} (${stay.nights} ${stay.nights === 1 ? 'night' : 'nights'})`).join(' → ')}`,
+      `Proposed stays: ${proposedStays.map((stay) => `${stay.baseName} (${stay.nights} ${stay.nights === 1 ? 'night' : 'nights'})`).join(' → ')}`,
+      'After this itinerary is applied, the Lodging page will automatically rebuild the stay-by-stay choices. No hotel is selected or booked automatically.',
+    )
+  }
+
   for (const dayId of affectedDayIds) {
     const current = currentDays.get(dayId)
     const proposed = proposedDays.get(dayId)
@@ -177,6 +191,15 @@ export function ItineraryComparisonModal({ proposal, currentPlan, canApply, appl
   const replacedDayCount = useMemo(() => new Set(proposal.operations.flatMap((operation) => (
     operation.type === 'replace_days' ? operation.days.map((day) => day.dayId) : []
   ))).size, [proposal.operations])
+  const currentLodgingSegments = useMemo(() => lodgingSegmentsForItinerary(currentPlan), [currentPlan])
+  const proposedLodgingSegments = useMemo(() => preview.plan ? lodgingSegmentsForItinerary(preview.plan) : [], [preview.plan])
+  const lodgingChanged = useMemo(() => (
+    JSON.stringify(currentLodgingSegments.map((segment) => [segment.baseKey, segment.nights]))
+    !== JSON.stringify(proposedLodgingSegments.map((segment) => [segment.baseKey, segment.nights]))
+  ), [currentLodgingSegments, proposedLodgingSegments])
+  const proposedLodgingOptionCount = useMemo(() => proposedLodgingSegments.reduce((total, segment) => (
+    total + lodgingOptionsForSegment(segment).length
+  ), 0), [proposedLodgingSegments])
   const stale = proposal.baseRevision !== currentPlan.revision
   const applyLabel = replacedDayCount > 1
     ? `Apply ${replacedDayCount}-day itinerary`
@@ -293,6 +316,18 @@ export function ItineraryComparisonModal({ proposal, currentPlan, canApply, appl
             {proposal.warnings.length ? <div className="itinerary-comparison-warnings"><AlertTriangle aria-hidden="true" /><div><strong>Before you apply</strong><ul>{proposal.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div></div> : null}
           </section>
 
+          {preview.plan && lodgingChanged ? (
+            <section className="itinerary-lodging-impact" aria-label="Lodging impact">
+              <span><BedDouble /></span>
+              <div><strong>Lodging changes with this route</strong><p>The Lodging page will rebuild these stays after you apply. It will suggest matching options, but it will not choose or book a property for you.</p></div>
+              <dl>
+                <div><dt>Original</dt><dd>{currentLodgingSegments.map((segment) => `${segment.baseName} · ${segment.nights}n`).join(' → ')}</dd></div>
+                <div><dt>Proposed</dt><dd>{proposedLodgingSegments.map((segment) => `${segment.baseName} · ${segment.nights}n`).join(' → ')}</dd></div>
+              </dl>
+              <b>{proposedLodgingOptionCount ? `${proposedLodgingOptionCount} researched stay matches ready to compare` : 'A new lodging research gap will be flagged'}</b>
+            </section>
+          ) : null}
+
           <div className="itinerary-comparison-toolbar">
             <div className="itinerary-comparison-toggle" role="group" aria-label="Days shown">
               <button type="button" className={!showAllDays ? 'active' : ''} aria-pressed={!showAllDays} onClick={() => setShowAllDays(false)}>Affected days ({affectedDayIds.length})</button>
@@ -335,6 +370,7 @@ export function ItineraryComparisonModal({ proposal, currentPlan, canApply, appl
             <span>{applied ? 'You can still share this before-and-after comparison during this session.' : stale ? 'Ask Miller Time to refresh it against the latest itinerary.' : canApply ? 'You can undo the change from the itinerary after applying.' : 'You have view-only access to this trip.'}</span>
           </div>
           <Button className="secondary" type="button" onClick={onClose}>{applied ? 'Close comparison' : 'Keep current plan'}</Button>
+          {applied && lodgingChanged ? <AppLink className="button secondary" href="/lodging" onClick={onClose}><BedDouble />Compare stays</AppLink> : null}
           <Button className="success" type="button" onClick={onApply} disabled={applied || !canApply || stale || Boolean(preview.error)}><Check />{applied ? 'Already applied' : applyLabel}</Button>
         </footer>
       </section>

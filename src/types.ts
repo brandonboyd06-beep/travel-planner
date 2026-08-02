@@ -79,10 +79,15 @@ export interface ItineraryProposal {
 export interface Lodging {
   id: string
   name: string
-  town: 'Banff' | 'Canmore'
+  town: 'Banff' | 'Canmore' | 'Jasper'
   type: 'Hotel' | 'Condo / rental'
   price: number
   total: number
+  currency: 'USD'
+  rateBasis: 'per-room-night' | 'whole-unit-night'
+  roomCount: number
+  referenceNights: number
+  estimatedFixedFees: number
   rooms: string
   walkability: string
   parking: string
@@ -93,6 +98,11 @@ export interface Lodging {
   loyalty: string
   pros: string[]
   cons: string[]
+  bestFor: string
+  highlights: string[]
+  image: string
+  imageAlt: string
+  imageKind: 'illustrative'
   url: string
   lastChecked: string
   recommended?: boolean
@@ -111,13 +121,21 @@ export interface Restaurant {
 }
 
 export interface Activity {
+  id: string
   name: string
   area: string
   difficulty: 'Easy' | 'Moderate' | 'Easy–moderate'
   cost: 'Free' | 'Paid'
   tags: string[]
+  whyGo: string
+  highlights: string[]
+  timeNeeded: string
+  bestTime: string
   note: string
   image: string
+  imageAlt: string
+  mapsQuery: string
+  officialUrl?: string
 }
 
 export interface MapLocation {

@@ -2,7 +2,40 @@ import type { Lodging } from '../types'
 
 const checked = 'Aug 1, 2026'
 
-export const lodging: Lodging[] = [
+type LodgingSeed = Omit<Lodging, 'currency' | 'rateBasis' | 'roomCount' | 'referenceNights' | 'estimatedFixedFees' | 'bestFor' | 'highlights' | 'image' | 'imageAlt' | 'imageKind'> &
+  Partial<Pick<Lodging, 'currency' | 'rateBasis' | 'roomCount' | 'referenceNights' | 'estimatedFixedFees' | 'bestFor' | 'highlights' | 'image' | 'imageAlt' | 'imageKind'>>
+
+function completeLodging(item: LodgingSeed): Lodging {
+  const rateBasis = item.rateBasis ?? (item.type === 'Hotel' ? 'per-room-night' : 'whole-unit-night')
+  const roomCount = item.roomCount ?? (item.type === 'Hotel' ? 3 : 1)
+  const referenceNights = item.referenceNights ?? (item.town === 'Banff' ? 4 : item.town === 'Canmore' ? 3 : 2)
+  const referenceBase = item.price * (rateBasis === 'per-room-night' ? roomCount : 1) * referenceNights
+  const image = item.image ?? (item.town === 'Jasper'
+    ? '/images/lodging/lodging-jasper-lodge.jpg'
+    : item.town === 'Canmore'
+      ? '/images/lodging/lodging-canmore-condo.jpg'
+      : item.type === 'Condo / rental'
+        ? '/images/lodging/lodging-banff-suite.jpg'
+        : item.id === 'peaks' || item.id === 'moxy' || item.id === 'canoe'
+          ? '/images/lodging/lodging-banff-suite.jpg'
+          : '/images/lodging/lodging-banff-exterior.jpg')
+
+  return {
+    ...item,
+    currency: 'USD',
+    rateBasis,
+    roomCount,
+    referenceNights,
+    estimatedFixedFees: item.estimatedFixedFees ?? Math.max(0, item.total - referenceBase),
+    bestFor: item.bestFor ?? item.pros[0],
+    highlights: item.highlights ?? item.pros,
+    image,
+    imageAlt: item.imageAlt ?? `Illustrative ${item.town} mountain lodging scene for ${item.name}; not a property photograph`,
+    imageKind: 'illustrative',
+  }
+}
+
+const lodgingResearch: LodgingSeed[] = [
   { id: 'canalta', name: 'Canalta Lodge', town: 'Banff', type: 'Hotel', price: 285, total: 3420, rooms: '3 rooms · 4 nights', walkability: '15 min to center', parking: 'Verify fee', kitchen: 'No', amenities: 'Hot tubs · sauna', transit: 'Roam stop nearby', score: 8.8, loyalty: 'Check card portal rates', pros: ['Strong value candidate', 'Good common spaces'], cons: ['Not in the central core', 'Verify unusually low rates'], url: 'https://canaltalodge.com/', lastChecked: checked, recommended: true },
   { id: 'caribou', name: 'Banff Caribou Lodge & Spa', town: 'Banff', type: 'Hotel', price: 310, total: 3720, rooms: '3 rooms · 4 nights', walkability: '15 min to center', parking: 'Included · verify', kitchen: 'No', amenities: 'Spa · hot pool', transit: 'Roam stop at property', score: 8.0, loyalty: 'Check card portal rates', pros: ['Banff Avenue', 'On-site restaurant'], cons: ['Mixed room reviews', 'Inventory varies'], url: 'https://www.banffcariboulodge.com/', lastChecked: checked },
   { id: 'peaks', name: 'Peaks Hotel & Suites', town: 'Banff', type: 'Hotel', price: 440, total: 5280, rooms: '3 rooms · 4 nights', walkability: 'Central · 2 min', parking: 'Paid · verify', kitchen: 'Some suites', amenities: 'Modern rooms', transit: 'Very convenient', score: 9.0, loyalty: 'Compare Venture X portal', pros: ['Excellent location', 'Modern and quiet'], cons: ['Often above target', 'Limited common space'], url: 'https://peakshotelandsuites.com/', lastChecked: checked },
@@ -20,4 +53,10 @@ export const lodging: Lodging[] = [
   { id: 'malcolm', name: 'The Malcolm Hotel', town: 'Canmore', type: 'Hotel', price: 420, total: 3780, rooms: '3 rooms · 3 nights', walkability: 'Central · 3 min', parking: 'Included · verify', kitchen: 'No', amenities: 'Pool · hot tubs', transit: 'Excellent', score: 9.0, loyalty: 'Compare premium portal offers', pros: ['Best central hotel option', 'Views and pool'], cons: ['Three rooms are costly', 'No shared kitchen'], url: 'https://www.malcolmhotel.ca/', lastChecked: checked },
   { id: 'everwild', name: 'Everwild Canmore', town: 'Canmore', type: 'Hotel', price: 360, total: 3240, rooms: '3 rooms · 3 nights', walkability: '15 min to downtown', parking: 'Verify', kitchen: 'No', amenities: 'Nordic spa concept', transit: 'Walk / drive', score: 8.7, loyalty: 'Verify opening and inclusions', pros: ['Great poor-weather idea', 'Relaxed design'], cons: ['Verify opening status', 'Package pricing varies'], url: 'https://www.everwildcanmore.com/', lastChecked: checked },
   { id: 'silver-creek', name: 'Silver Creek Lodge', town: 'Canmore', type: 'Condo / rental', price: 325, total: 1245, rooms: 'Suites · 3 nights', walkability: '25 min to downtown', parking: 'Included · verify', kitchen: 'Kitchen', amenities: 'Spa', transit: 'Drive preferred', score: 8.2, loyalty: 'Value candidate', pros: ['More affordable', 'Suite layouts'], cons: ['Less central', 'Variable reviews'], url: 'https://www.silvercreeklodge.ca/', lastChecked: checked },
+  { id: 'jasper-inn', name: 'Jasper Inn & Suites', town: 'Jasper', type: 'Hotel', price: 310, total: 1860, rooms: '3 rooms · current Jasper segment', walkability: 'About 12 min to downtown', parking: 'On-site · verify', kitchen: 'Select suites', amenities: 'Indoor pool · hot tub · sauna', transit: 'Walk / drive', score: 8.4, loyalty: 'Compare direct and card portal', pros: ['Good value starting point', 'Suite choices for a group'], cons: ['Room layouts vary', 'Confirm parking and renovation impacts'], bestFor: 'A practical Jasper base without paying lakeside prices', highlights: ['Pool and hot tub for a recovery night', 'Suites can add useful group space'], url: 'https://jasperinn.com/', lastChecked: 'Aug 2, 2026', recommended: true },
+  { id: 'crimson', name: 'The Crimson Jasper', town: 'Jasper', type: 'Hotel', price: 365, total: 2190, rooms: '3 rooms · current Jasper segment', walkability: 'One block to shops', parking: 'Limited free parking', kitchen: 'Studios and suites', amenities: 'Indoor pool · hot tub · restaurant', transit: 'Very convenient', score: 8.8, loyalty: 'Direct-book discount may apply', pros: ['Easiest town access', 'Modern rooms and on-site dining'], cons: ['Parking is first-come', 'Three rooms raise the total'], bestFor: 'Walking to Jasper restaurants after the Icefields Parkway drive', highlights: ['One block from shops and restaurants', 'Pool, hot tub, and Terra restaurant'], image: '/images/lodging/lodging-jasper-central.jpg', imageAlt: 'Illustrative modern central Jasper hotel scene for The Crimson; not a property photograph', url: 'https://www.banffjaspercollection.com/hotels/the-crimson/', lastChecked: 'Aug 2, 2026', recommended: true },
+  { id: 'forest-park', name: 'Forest Park Hotel', town: 'Jasper', type: 'Hotel', price: 340, total: 2040, rooms: '3 rooms · current Jasper segment', walkability: 'North edge of town', parking: 'Free · verify', kitchen: 'Kitchen suites available', amenities: 'Pool · hot tub · spa reopening in 2026', transit: 'Walk / drive', score: 8.5, loyalty: 'Compare direct and portal', pros: ['Resort-style amenities', 'Flexible room and suite types'], cons: ['Property refresh continues into fall 2026', 'Verify which amenities are open for the trip'], bestFor: 'A relaxed hotel night with more on-site amenities', highlights: ['Kitchen-suite options', 'Free parking and wellness facilities'], image: '/images/lodging/lodging-jasper-wellness.jpg', imageAlt: 'Illustrative Jasper wellness lodge scene for Forest Park Hotel; not a property photograph', url: 'https://www.banffjaspercollection.com/hotels/forest-park-hotel/', lastChecked: 'Aug 2, 2026' },
+  { id: 'pyramid-lake', name: 'Pyramid Lake Lodge', town: 'Jasper', type: 'Hotel', price: 430, total: 2580, rooms: '3 rooms or a group loft · current Jasper segment', walkability: '6 km from Jasper townsite', parking: 'On-site · verify vehicle fit', kitchen: 'Select rooms and lofts', amenities: 'Lake access · hot tub · sauna', transit: 'Drive required', score: 9.0, loyalty: 'Direct-book discount may apply', pros: ['A destination stay on the lake', 'Boat and bike access'], cons: ['$20/night amenity fee listed', 'Not walkable to Jasper restaurants'], bestFor: 'Trading town walkability for a memorable lakeside stay', highlights: ['Pyramid Lake at the doorstep', 'Group-friendly loft and kitchenette layouts'], image: '/images/lodging/lodging-jasper-lakeside.jpg', imageAlt: 'Illustrative lakeside Jasper lodge scene for Pyramid Lake Lodge; not a property photograph', url: 'https://www.banffjaspercollection.com/hotels/pyramid-lake-lodge/', lastChecked: 'Aug 2, 2026' },
 ]
+
+export const lodging: Lodging[] = lodgingResearch.map(completeLodging)

@@ -51,6 +51,7 @@ LODGING SCENARIOS
 - Scenario B: all 7 nights in central Banff, 3 rooms at a target $325 average; base $6,825 plus $1,041 allowance; total $7,866 / $1,967 each / $134 below cap.
 - Scenario C: all 7 nights in a Canmore 3-bedroom rental at a target $520 nightly; base $3,640 plus $610 allowance; total $4,250 / $1,063 each / $3,750 below cap.
 - Other researched stays include Caribou, Peaks, Moose, Moxy, Fox, Royal Canadian, Hotel Canoe, Elk + Avenue, Bow View, The Kenrick, Blackstone, Falcon Crest, The Malcolm, Everwild, and Silver Creek. These are research snapshots only.
+- Jasper research is also ready when the itinerary adds a Jasper overnight: Jasper Inn & Suites, The Crimson, Forest Park Hotel, and Pyramid Lake Lodge. The Lodging page calculates them against the exact Jasper segment after an itinerary change; all rates remain planning estimates.
 
 TRANSPORT AND RESERVATIONS
 - Priorities: book lodging; reserve Lake Louise/Moraine Lake transportation; then Gondola/Sky Bistro, top dinners, Columbia Icefield if chosen, Avis, and verify Lake Minnewanka operations.
@@ -64,10 +65,10 @@ DINING SHORTLIST
 
 ACTIVITY STYLE AND CONSTRAINTS
 - The group wants easy-to-moderate options and weather-ready backups. October can mean freezing nights, wet/icy paths, snow, and changing road conditions.
-- Main options: Lake Louise lakeshore, Lake Agnes, Little Beehive, Moraine Rockpile, Gondola, Upper Hot Springs, Johnston Canyon, Lake Minnewanka, Cave and Basin, Peyto Lake, Columbia Icefield, Policeman’s Creek, Grotto Canyon, and Grassi Lakes only if confirmed open.
+- Main options: Lake Louise lakeshore, Lake Agnes, Little Beehive, Moraine Rockpile, Gondola, Upper Hot Springs, Johnston Canyon, Lake Minnewanka, Cave and Basin, Peyto Lake, Columbia Icefield, Policeman’s Creek, Grotto Canyon, and Grassi Lakes only if confirmed open. If Jasper is in the applied route, Things To Do also offers Athabasca Falls, Pyramid Lake and Island, Maligne Lake shore, and downtown Jasper. Maligne Canyon and Cavell Road are closed for the 2026 season.
 
 HOW THE WEBSITE WORKS
-- Overview: trip facts and a read-only snapshot of the booking center. Itinerary: each day plus expandable options and full logistics. Book & Reserve: the action center for live official-source guidance, clear booking deadlines, direct provider links, and shared completion status; the group only needs one of the two lake-shuttle choices. Lodging: filters, preferred stay, three clickable scenarios, detailed costs, and calculator. Transportation, Dining, and Things To Do: researched option catalogs with filters and expandable lists. Map: trip pins and an Open in Google Maps action. Budget: editable planning estimates. Notes: packing, safety, booking status, and trip notes; those choices are device-only for guests and shared for signed-in trip members.
+- Overview: trip facts and a read-only snapshot of the booking center. Itinerary: each day plus expandable options and full logistics. Book & Reserve: the action center for live official-source guidance, clear booking deadlines, direct provider links, and shared completion status; the group only needs one of the two lake-shuttle choices. Lodging: an itinerary-driven checklist of consecutive overnight stays, destination filters, one shared choice per stay, official property links, a side-by-side comparison for up to three properties, and original-route scenarios shown only when they still fit. Things To Do: location-specific pictures, highlights, timing, official information, Google Maps, and an Ask MT to add action; Jasper choices appear when Jasper is in the itinerary. Transportation and Dining are researched catalogs with filters and direct links. Map: trip pins and an Open in Google Maps action. Budget: editable planning estimates. Notes: packing, safety, booking status, and trip notes; those choices are device-only for guests and shared for signed-in trip members.
 - Edits save to this browser by default. Account creation is optional and only needed to collaborate/sync with the group. Signed-in trip choices, including shared notes and packing lists, sync to the shared trip; Miller Time never receives personal notes or packing-list contents. Guest AI chat stays browser-local. Signed-in users get a private, per-user, per-trip transcript in secure cloud storage so their conversation resumes on another device.
 `.trim()
 
@@ -626,7 +627,7 @@ function rewriteSafetyWarnings(operations: ProposalOperation[], itinerary: Compa
   const warnings: string[] = []
   if (baseChanges.length) {
     warnings.push(`Overnight bases change on ${baseChanges.join(', ')}. Confirm new lodging before canceling anything already reserved.`)
-    warnings.push('This applies the day-by-day itinerary only. Book & Reserve will rematch its dates automatically; lodging research choices and Budget estimates still need a separate review.')
+    warnings.push('Book & Reserve and Lodging will rematch the new dates and overnight bases automatically. Compare and choose one stay for each segment after applying; no property is selected or booked automatically.')
   }
   if (fixedChanges.length) warnings.push(`Fixed lodging, shuttle, or travel details change on ${fixedChanges.join(', ')}. Recheck every affected reservation before applying.`)
   return warnings
@@ -1112,6 +1113,7 @@ RESPONSE AND ITINERARY ACTION MODE
 - Each replacement must contain the full ordered stops plus title, overnight location, optional ideas, weather backup, logistics, and dining for that day. Unlisted days remain unchanged. Use fixed priority only for genuine travel, shuttle, or lodging anchors.
 - Compare each day’s ending base with the previous day’s ending base. Whenever they differ, that day must include both an explicit travel transition and a lodging stop. Include every following interior day needed to reconnect with the unchanged plan. The final rewritten interior day must return to the exact base expected by the protected departure day; for this trip, October 9 must include the return from Jasper and still end in Canmore before the October 10 airport departure.
 - If the traveler explicitly requests a broad rewrite, make a decisive, safe proposal when dates and destination are known; do not ask them to choose minor routing details that you can sensibly optimize. For Jasper, prefer an overnight plan over an exhausting Banff day trip and explain the lodging impact.
+- The Lodging page derives consecutive stays directly from the applied itinerary and has curated Banff, Canmore, and Jasper comparisons. When an overnight base changes, tell the traveler the matching lodging options will appear automatically after Apply, but that they still must choose and book a property.
 - Use exact supplied dayId, stopId, fromDayId, toDayId, and afterStopId values. The app rejects invented IDs.
 - Use null for optional proposal fields rather than guessing. Never guess coordinates or URLs.
 - Copy the supplied current itinerary revision exactly into baseRevision for every resolution.

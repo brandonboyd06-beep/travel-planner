@@ -124,6 +124,16 @@ export function MillerTimeAI() {
   }, [setLocalMessages])
 
   useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ draft?: unknown }>).detail
+      if (typeof detail?.draft === 'string') setDraft(detail.draft.slice(0, 1600))
+      setOpen(true)
+    }
+    window.addEventListener('miller-time:open', onOpen)
+    return () => window.removeEventListener('miller-time:open', onOpen)
+  }, [])
+
+  useEffect(() => {
     if (!user || !trip) {
       setCloudMessages([welcome])
       setMemoryLoading(false)
@@ -243,6 +253,7 @@ export function MillerTimeAI() {
       const allPreferences = readLocalPreferences()
       const preferences = Object.fromEntries([
         'preferred-lodging',
+        'lodging-selections-v1',
         'lodging-scenario',
         'budget-estimates',
         'booking-progress',

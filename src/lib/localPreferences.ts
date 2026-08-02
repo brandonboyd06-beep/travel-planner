@@ -8,6 +8,8 @@ export const cloudPreferenceKeys = [
   'booking-reviewed-revision',
   'itinerary-plan-v1',
   'preferred-lodging',
+  'lodging-selections-v1',
+  'lodging-scenario',
   'lodging-calculator',
   'budget-estimates',
   'packing',
@@ -81,7 +83,13 @@ export function isValidCloudPreference(key: CloudPreferenceKey, value: unknown) 
     return (typeof value === 'string' && value.length <= 120)
       || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
   }
-  if (key === 'preferred-lodging' || key === 'personal-notes') return typeof value === 'string'
+  if (key === 'preferred-lodging' || key === 'personal-notes' || key === 'lodging-scenario') return typeof value === 'string'
+  if (key === 'lodging-selections-v1') {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+      && Object.entries(value as Record<string, unknown>).every(([segmentId, lodgingId]) => (
+        segmentId.length > 0 && segmentId.length <= 240 && typeof lodgingId === 'string' && lodgingId.length <= 120
+      ))
+  }
   if (key === 'overview-checklist' || key === 'booking-progress' || key === 'packing') {
     return Array.isArray(value) && value.every((item) => typeof item === 'string')
   }
@@ -153,7 +161,8 @@ export function associateLocalPreferenceWithTrip(key: string, tripId: string) {
 
 function defaultCloudPreference(key: CloudPreferenceKey): unknown {
   if (key === 'booking-reviewed-revision') return ''
-  if (key === 'preferred-lodging' || key === 'personal-notes') return ''
+  if (key === 'preferred-lodging' || key === 'personal-notes' || key === 'lodging-scenario') return ''
+  if (key === 'lodging-selections-v1') return {}
   if (key === 'overview-checklist' || key === 'booking-progress' || key === 'packing') return []
   if (key === 'itinerary-plan-v1') return defaultItineraryPlan
   if (key === 'budget-estimates') return {

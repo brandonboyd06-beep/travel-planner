@@ -9,6 +9,7 @@ import type {
   ItineraryStopPriority,
 } from '../types'
 import type { RoutePoint } from './maps'
+import { resolveItineraryDayVisual } from './placeVisuals'
 
 const stopKinds = new Set<ItineraryStopKind>(['travel', 'activity', 'scenic', 'meal', 'lodging', 'other'])
 const priorities = new Set<ItineraryStopPriority>(['fixed', 'core', 'optional'])
@@ -146,13 +147,8 @@ function boundedTextList(value: unknown, maximumItems: number, maximumLength: nu
   return value.map((item) => boundedText(item, maximumLength, label))
 }
 
-function visualForReplacement(location: string) {
-  if (!/\bjasper\b/i.test(location)) return {}
-  return {
-    image: '/images/thumbs/icefields-parkway.jpg',
-    imageAlt: 'Canadian Rockies route through the Icefields Parkway toward Jasper',
-    tone: 'amber' as const,
-  } satisfies Partial<ItineraryDay>
+function visualForReplacement(day: ItineraryDay) {
+  return resolveItineraryDayVisual(day)
 }
 
 function replaceItineraryDays(
@@ -228,9 +224,8 @@ function replaceItineraryDays(
       ? draft.coordinates
       : stops.find((stop) => stop.coordinates)?.coordinates ?? existing.coordinates
 
-    replacementById.set(draft.dayId, {
+    const replacementDay: ItineraryDay = {
       ...existing,
-      ...visualForReplacement(draft.location),
       title: boundedText(draft.title, 160, 'The day title'),
       location: boundedText(draft.location, 120, 'The overnight location'),
       label,
@@ -240,6 +235,10 @@ function replaceItineraryDays(
       logistics: boundedText(draft.logistics, 500, 'The logistics note'),
       dining: boundedTextList(draft.dining, 6, 140, 'The dining ideas'),
       coordinates,
+    }
+    replacementById.set(draft.dayId, {
+      ...replacementDay,
+      ...visualForReplacement(replacementDay),
     })
   }
 
@@ -346,11 +345,15 @@ export function applyItineraryOperations(
     day.stops.splice(index, 1)
   }
 
+  const resolvedDays = days.map((day) => ({
+    ...day,
+    ...resolveItineraryDayVisual(day),
+  }))
   const next = {
     ...current,
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
-    days,
+    days: resolvedDays,
     appliedProposalIds: proposalId
       ? [...current.appliedProposalIds.filter((id) => id !== proposalId), proposalId].slice(-40)
       : current.appliedProposalIds,

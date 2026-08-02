@@ -4,19 +4,21 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  BedDouble,
   CalendarCheck2,
   CalendarDays,
   CircleHelp,
   HardDrive,
   Home,
   MapPinned,
+  Mountain,
   UserPlus,
   X,
 } from 'lucide-react'
 import { useCollaboration } from '../context/collaboration'
 import { AppLink } from './AppLink'
 
-const GUIDE_SEEN_KEY = 'banff-2026:trip-help-seen-v1'
+const GUIDE_SEEN_KEY = 'banff-2026:trip-help-seen-v2'
 
 interface GuideStep {
   title: string
@@ -43,6 +45,18 @@ const steps: GuideStep[] = [
     body: 'Tap Book & Reserve. Start with anything marked Book now. Use the real booking link. Tap the check when the job is done.',
     action: { label: 'Open Book & Reserve', href: '/book' },
     icon: CalendarCheck2,
+  },
+  {
+    title: 'Pick where to sleep',
+    body: 'Tap Lodging. At the top, tap the trip stop you need. Add two or three places to Compare. Look at them side by side. Tap Choose when you like one. If the itinerary adds Jasper, a Jasper stop and Jasper choices appear by themselves.',
+    action: { label: 'Open Lodging', href: '/lodging' },
+    icon: BedDouble,
+  },
+  {
+    title: 'Find a fun thing to do',
+    body: 'Tap Things To Do. Each card has a real-place picture, the best parts, time needed, a map, and official info. Tap Ask MT to add when you want Miller Time to fit it into the best day.',
+    action: { label: 'Open Things To Do', href: '/activities' },
+    icon: Mountain,
   },
   {
     title: 'Find places and directions',

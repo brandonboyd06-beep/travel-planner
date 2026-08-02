@@ -12,6 +12,7 @@ import { useItinerary } from '../context/itinerary'
 import { routePointsForPlan } from '../lib/itineraryPlan'
 import { itineraryIncludes, summarizeItinerary } from '../lib/itinerarySummary'
 import { isShuttleBooking, reconcileBookingItems } from '../lib/bookingPlan'
+import { resolveItineraryDayVisual } from '../lib/placeVisuals'
 
 export function OverviewPage() {
   const { plan } = useItinerary()
@@ -68,7 +69,10 @@ export function OverviewPage() {
           <section>
             <SectionHeading title="Trip highlights" link={{ label: 'See all activities', to: '/activities' }} />
             <div className="highlight-strip">
-              {plan.days.slice(1, 5).map((day) => <AppLink href={`/itinerary#itinerary-${day.id}`} key={day.id} className="highlight-card"><img src={day.image} alt="" /><div><span>{day.day} · OCT {day.date}</span><strong>{day.title}</strong></div></AppLink>)}
+              {plan.days.slice(1, 5).map((day) => {
+                const visual = resolveItineraryDayVisual(day)
+                return <AppLink href={`/itinerary#itinerary-${day.id}`} key={day.id} className="highlight-card"><img src={visual.image} alt={visual.imageAlt} loading="lazy" decoding="async" /><div><span>{day.day} · OCT {day.date}</span><strong>{day.title}</strong></div></AppLink>
+              })}
             </div>
           </section>
         </div>

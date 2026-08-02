@@ -1,5 +1,6 @@
 import { CheckCircle2, Circle, CloudRain, LockKeyhole, MapPin, Navigation, Pencil, Plus } from 'lucide-react'
 import { routePointsForDay } from '../lib/itineraryPlan'
+import { resolveItineraryDayVisual } from '../lib/placeVisuals'
 import type { ItineraryDay } from '../types'
 import { RoutePreviewMap } from './RoutePreviewMap'
 import { StatusPill } from './ui'
@@ -16,6 +17,7 @@ interface ItineraryDayCardProps {
 
 export function ItineraryDayCard({ item, optionalOn, onToggle, onOpenRoute, onAddStop, onEditDay, canEdit }: ItineraryDayCardProps) {
   const routePoints = routePointsForDay(item)
+  const visual = resolveItineraryDayVisual(item)
 
   return (
     <article className="itinerary-day-card" id={`itinerary-${item.id}`}>
@@ -41,7 +43,7 @@ export function ItineraryDayCard({ item, optionalOn, onToggle, onOpenRoute, onAd
         {optionalOn ? <ul className="optional-list">{item.optional.map((idea) => <li key={idea}>{idea}</li>)}</ul> : null}
         <div className="stay-line"><MapPin />Stay: {item.location}</div>
       </div>
-      <img className="day-photo" src={item.image} alt={item.imageAlt} loading="lazy" />
+      <img className="day-photo" src={visual.image} alt={visual.imageAlt} loading="lazy" decoding="async" />
       <div className="day-map">
         <RoutePreviewMap points={routePoints} onOpen={onOpenRoute} label="Explore route" height="100%" />
       </div>
