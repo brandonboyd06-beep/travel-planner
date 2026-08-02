@@ -30,7 +30,9 @@ export interface CollaborationContextValue {
   openModal: () => void
   closeModal: () => void
   dismissNotice: () => void
-  sendMagicLink: (email: string, displayName: string, mode: AuthMode) => Promise<void>
+  retrySync: () => Promise<void>
+  authenticateWithPassword: (email: string, password: string, displayName: string, mode: AuthMode) => Promise<'signed-in' | 'confirmation-required'>
+  updatePassword: (password: string) => Promise<void>
   inviteMember: (email: string, displayName: string) => Promise<void>
   signOut: () => Promise<void>
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { LayerGroup, Map as LeafletMap } from 'leaflet'
+import type { LayerGroup, Map as LeafletMap, Marker } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import {
   buildGoogleMapsSearchUrl,
@@ -143,6 +143,7 @@ export function RouteMap({
       if (!active || !ready || !map || !layer) return
 
       layer.clearLayers()
+      const markers = new Map<string, Marker>()
 
       if (showRoute && mappablePoints.length > 1) {
         L.polyline(mappablePoints.map(({ point }) => point.coordinates), {
@@ -173,7 +174,7 @@ export function RouteMap({
           marker.on('click', () => onSelectRef.current?.(point))
         }
         marker.addTo(layer)
-        if (interactive && point.id === selectedPointId) marker.openPopup()
+        markers.set(point.id, marker)
       })
 
       if (mappablePoints.length === 1) {
@@ -187,6 +188,10 @@ export function RouteMap({
       } else {
         map.setView(DEFAULT_CENTER, 8, { animate: false })
       }
+
+      // Open after fitting the route so Leaflet can pan the popup fully inside
+      // the final map viewport, especially in the narrow mobile explorer.
+      if (interactive && selectedPointId) markers.get(selectedPointId)?.openPopup()
     }
 
     void updateLayers()

@@ -10,7 +10,7 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   const { trip } = useCollaboration()
   const [storedPlan, setStoredPlan] = useLocalStorage<unknown>('itinerary-plan-v1', defaultItineraryPlan)
   const plan = useMemo(() => getInitialItineraryPlan(storedPlan), [storedPlan])
-  const undoRef = useRef<ItineraryPlan | null>(null)
+  const undoRef = useRef<{ previous: ItineraryPlan; appliedUpdatedAt: string } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [lastChange, setLastChange] = useState('')
   const canEdit = trip?.role !== 'viewer'
@@ -19,9 +19,17 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     if (!isItineraryPlan(storedPlan)) setStoredPlan(plan)
   }, [plan, setStoredPlan, storedPlan])
 
+  useEffect(() => {
+    const undo = undoRef.current
+    if (!undo || undo.appliedUpdatedAt === plan.updatedAt) return
+    undoRef.current = null
+    setCanUndo(false)
+    setLastChange('')
+  }, [plan.updatedAt])
+
   const commit = useCallback((next: ItineraryPlan, message: string) => {
     if (!canEdit) throw new Error('Viewers can explore the trip but cannot change the shared itinerary.')
-    undoRef.current = plan
+    undoRef.current = { previous: plan, appliedUpdatedAt: next.updatedAt }
     setCanUndo(true)
     setStoredPlan(next)
     setLastChange(message)
@@ -37,11 +45,15 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   }, [commit, plan])
 
   const updateStop = useCallback((dayId: string, stopId: string, patch: ItineraryStopPatch) => {
+    const stop = plan.days.find((day) => day.id === dayId)?.stops.find((item) => item.id === stopId)
+    if (stop?.priority === 'fixed') throw new Error('Fixed travel and lodging anchors must be changed with Miller Time so the whole day stays consistent.')
     const next = applyItineraryOperations(plan, [{ type: 'update_stop', dayId, stopId, patch }], 'manual')
     commit(next, 'The itinerary stop was updated.')
   }, [commit, plan])
 
   const moveStop = useCallback((fromDayId: string, toDayId: string, stopId: string, afterStopId?: string) => {
+    const stop = plan.days.find((day) => day.id === fromDayId)?.stops.find((item) => item.id === stopId)
+    if (stop?.priority === 'fixed') throw new Error('Fixed travel and lodging anchors must be changed with Miller Time so the whole day stays consistent.')
     const next = applyItineraryOperations(plan, [{ type: 'move_stop', fromDayId, toDayId, stopId, afterStopId }], 'manual')
     commit(next, 'The itinerary stop was moved.')
   }, [commit, plan])
@@ -50,7 +62,7 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     const day = plan.days.find((item) => item.id === dayId)
     const index = day?.stops.findIndex((stop) => stop.id === stopId) ?? -1
     if (!day || index < 0) return
-    if (day.stops[index].priority === 'fixed' && day.stops[index].source !== 'miller') return
+    if (day.stops[index].priority === 'fixed') return
     if ((direction < 0 && index === 0) || (direction > 0 && index === day.stops.length - 1)) return
     const stops = [...day.stops]
     const destination = index + direction
@@ -68,6 +80,7 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   const removeStop = useCallback((dayId: string, stopId: string) => {
     const day = plan.days.find((item) => item.id === dayId)
     const stop = day?.stops.find((item) => item.id === stopId)
+    if (stop?.priority === 'fixed') throw new Error('Fixed travel and lodging anchors must be changed with Miller Time so the whole day stays consistent.')
     const next = applyItineraryOperations(plan, [{ type: 'remove_stop', dayId, stopId }], 'manual')
     commit(next, `${stop?.name ?? 'The stop'} was removed.`)
   }, [commit, plan])
@@ -77,7 +90,7 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     setStoredPlan((currentValue: unknown) => {
       const currentPlan = getInitialItineraryPlan(currentValue)
       const next = applyProposal(currentPlan, proposal)
-      undoRef.current = currentPlan
+      undoRef.current = { previous: currentPlan, appliedUpdatedAt: next.updatedAt }
       setCanUndo(true)
       setLastChange(proposal.summary)
       return next
@@ -85,10 +98,10 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   }, [canEdit, setStoredPlan])
 
   const undo = useCallback(() => {
-    const previous = undoRef.current
-    if (!previous || !canEdit) return
+    const undoState = undoRef.current
+    if (!undoState || undoState.appliedUpdatedAt !== plan.updatedAt || !canEdit) return
     const restored: ItineraryPlan = {
-      ...previous,
+      ...undoState.previous,
       revision: plan.revision + 1,
       updatedAt: new Date().toISOString(),
     }
@@ -96,7 +109,7 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     setCanUndo(false)
     setStoredPlan(restored)
     setLastChange('Last itinerary change undone.')
-  }, [canEdit, plan.revision, setStoredPlan])
+  }, [canEdit, plan.revision, plan.updatedAt, setStoredPlan])
 
   const clearLastChange = useCallback(() => {
     undoRef.current = null

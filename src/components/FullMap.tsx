@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import type { MapLocation } from '../types'
 
 const colors: Record<MapLocation['category'], string> = {
-  Lodging: '#1261c9', Dining: '#d97706', Activities: '#168a63', 'Shuttle pickup': '#7c3aed',
+  Lodging: '#1261c9', Dining: '#d97706', Activities: '#168a63', Transportation: '#475569', 'Shuttle pickup': '#7c3aed',
   'Scenic stops': '#0e7490', Airport: '#334155', 'Visitor centers': '#b45309',
 }
 

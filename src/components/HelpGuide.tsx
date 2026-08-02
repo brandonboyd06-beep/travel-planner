@@ -7,6 +7,7 @@ import {
   CalendarCheck2,
   CalendarDays,
   CircleHelp,
+  HardDrive,
   Home,
   MapPinned,
   UserPlus,
@@ -53,6 +54,11 @@ const steps: GuideStep[] = [
     title: 'Ask Miller Time',
     body: 'Tap Miller Time AI in the corner. Ask a simple question, or say exactly what you want changed. She will not change the trip until you review it and tap Apply.',
     icon: Bot,
+  },
+  {
+    title: 'Know where things save',
+    body: 'No account: your choices stay on this device. Signed in: the group can see synced trip choices. Only put confirmation numbers in Notes if everyone in the trip should see them.',
+    icon: HardDrive,
   },
   {
     title: 'Plan with the group',
@@ -152,7 +158,7 @@ export function HelpGuide() {
       </button>
       {open && typeof document !== 'undefined' ? createPortal(
         <div className="help-guide-layer">
-          <button className="help-guide-scrim" type="button" onClick={closeGuide} aria-label="Close Help guide" tabIndex={-1} />
+          <button className="help-guide-scrim" type="button" onClick={closeGuide} aria-hidden="true" tabIndex={-1} />
           <section ref={dialogRef} id="help-guide-dialog" className="help-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="help-guide-title" aria-describedby="help-guide-copy">
             <header>
               <div className="help-guide-brand">

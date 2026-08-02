@@ -4,7 +4,7 @@ import { makeStop, makeTextStop } from './tripPlaces'
 const days: ItineraryDay[] = [
   {
     id: '2026-10-03', day: 'SAT', date: 3, month: 'OCT', title: 'Arrival: Calgary → Banff', location: 'Banff town',
-    image: '/images/banff-avenue.jpg', imageAlt: 'Banff Avenue beneath Cascade Mountain in autumn', tone: 'blue',
+    image: '/images/thumbs/banff-avenue.jpg', imageAlt: 'Banff Avenue beneath Cascade Mountain in autumn', tone: 'blue',
     stops: [
       makeStop('oct03-arrive-yyc', 'calgary-airport', 'travel', 'fixed', 'Arrive at varying times'),
       makeTextStop('oct03-avis', 'Pick up one larger Avis rental vehicle', 'Avis Calgary International Airport', 'travel', 'fixed'),
@@ -18,7 +18,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-04', day: 'SUN', date: 4, month: 'OCT', title: 'Lake Louise & Moraine Lake', location: 'Banff town',
-    image: '/images/moraine-lake.jpg', imageAlt: 'Moraine Lake and the Ten Peaks in early autumn', tone: 'green', label: 'Reservation required',
+    image: '/images/thumbs/moraine-lake.jpg', imageAlt: 'Moraine Lake and the Ten Peaks in early autumn', tone: 'green', label: 'Reservation required',
     stops: [
       makeStop('oct04-shuttle-banff', 'banff-avenue', 'travel', 'fixed', 'Early shuttle departure from Banff'),
       makeStop('oct04-lake-louise', 'lake-louise', 'scenic'),
@@ -34,7 +34,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-05', day: 'MON', date: 5, month: 'OCT', title: 'Banff Town, Gondola & Relaxation', location: 'Banff town',
-    image: '/images/banff-avenue.jpg', imageAlt: 'Downtown Banff with mountains beyond', tone: 'blue',
+    image: '/images/thumbs/banff-avenue.jpg', imageAlt: 'Downtown Banff with mountains beyond', tone: 'blue',
     stops: [
       makeTextStop('oct05-breakfast', 'Relaxed breakfast', 'Breakfast Banff Alberta', 'meal'),
       makeStop('oct05-bow-falls', 'bow-falls', 'scenic'),
@@ -50,7 +50,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-06', day: 'TUE', date: 6, month: 'OCT', title: 'Icefields Parkway Adventure', location: 'Banff town',
-    image: '/images/icefields-parkway.jpg', imageAlt: 'Icefields Parkway curving toward snowy Canadian Rockies peaks', tone: 'amber', label: 'Use the best road-weather day',
+    image: '/images/thumbs/icefields-parkway.jpg', imageAlt: 'Icefields Parkway curving toward snowy Canadian Rockies peaks', tone: 'amber', label: 'Use the best road-weather day',
     stops: [
       makeStop('oct06-start-banff', 'banff-avenue', 'travel', 'fixed', 'Start with a full tank and offline maps'),
       makeStop('oct06-bow-lake', 'bow-lake', 'scenic'),
@@ -67,7 +67,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-07', day: 'WED', date: 7, month: 'OCT', title: 'Johnston Canyon → Canmore', location: 'Canmore',
-    image: '/images/johnston-canyon.jpg', imageAlt: 'Johnston Canyon waterfall and suspended catwalk', tone: 'green',
+    image: '/images/thumbs/johnston-canyon.jpg', imageAlt: 'Johnston Canyon waterfall and suspended catwalk', tone: 'green',
     stops: [
       makeStop('oct07-checkout', 'canalta-lodge', 'lodging', 'fixed', 'Check out from Banff'),
       makeStop('oct07-johnston', 'johnston-canyon', 'activity', 'core', 'Lower Falls; Upper Falls only if conditions are good'),
@@ -82,7 +82,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-08', day: 'THU', date: 8, month: 'OCT', title: 'Canmore & Kananaskis', location: 'Canmore',
-    image: '/images/canmore.jpg', imageAlt: 'Bow River path in Canmore with mountain peaks beyond', tone: 'blue', label: 'Weather-dependent',
+    image: '/images/thumbs/canmore.jpg', imageAlt: 'Bow River path in Canmore with mountain peaks beyond', tone: 'blue', label: 'Weather-dependent',
     stops: [
       makeStop('oct08-policemans-creek', 'policemans-creek', 'activity'),
       makeStop('oct08-quarry-lake', 'quarry-lake', 'scenic'),
@@ -96,7 +96,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-09', day: 'FRI', date: 9, month: 'OCT', title: 'Flexible Recovery Day', location: 'Canmore',
-    image: '/images/lake-louise.jpg', imageAlt: 'Turquoise alpine lake surrounded by snowy mountains', tone: 'amber', label: 'Intentionally flexible',
+    image: '/images/thumbs/lake-louise.jpg', imageAlt: 'Turquoise alpine lake surrounded by snowy mountains', tone: 'amber', label: 'Intentionally flexible',
     stops: [
       makeTextStop('oct09-retry', 'Repeat a weather-canceled priority', 'Banff National Park', 'activity', 'optional'),
       makeStop('oct09-minnewanka', 'lake-minnewanka', 'scenic', 'optional'),
@@ -111,7 +111,7 @@ const days: ItineraryDay[] = [
   },
   {
     id: '2026-10-10', day: 'SAT', date: 10, month: 'OCT', title: 'Departure: Canmore → Calgary', location: 'Calgary Airport',
-    image: '/images/canmore.jpg', imageAlt: 'Autumn landscape beside the Bow River in Canmore', tone: 'blue',
+    image: '/images/thumbs/canmore.jpg', imageAlt: 'Autumn landscape beside the Bow River in Canmore', tone: 'blue',
     stops: [
       makeStop('oct10-breakfast', 'canmore-downtown', 'meal', 'core', 'Breakfast and coffee in Canmore'),
       makeStop('oct10-checkout', 'spring-creek', 'lodging', 'fixed', 'Check out'),

@@ -123,7 +123,7 @@ export interface Activity {
 export interface MapLocation {
   id: string
   name: string
-  category: 'Lodging' | 'Dining' | 'Activities' | 'Shuttle pickup' | 'Scenic stops' | 'Airport' | 'Visitor centers'
+  category: 'Lodging' | 'Dining' | 'Activities' | 'Transportation' | 'Shuttle pickup' | 'Scenic stops' | 'Airport' | 'Visitor centers'
   coordinates: [number, number]
   day: string
   note: string

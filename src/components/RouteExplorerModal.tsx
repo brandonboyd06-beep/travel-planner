@@ -152,7 +152,7 @@ function OpenRouteExplorerModal({
     <div className="route-explorer-layer" style={layerStyle}>
       <button
         type="button"
-        aria-label="Close route explorer"
+        aria-hidden="true"
         onClick={onClose}
         tabIndex={-1}
         style={{ background: 'rgb(2 12 23 / 68%)', border: 0, inset: 0, position: 'absolute' }}
@@ -181,7 +181,7 @@ function OpenRouteExplorerModal({
             type="button"
             aria-label="Close route explorer"
             onClick={onClose}
-            style={{ background: '#f2f4f7', border: 0, borderRadius: 7, color: '#526173', cursor: 'pointer', display: 'grid', flex: '0 0 auto', height: 34, placeItems: 'center', width: 34 }}
+            style={{ background: '#f2f4f7', border: 0, borderRadius: 7, color: '#526173', cursor: 'pointer', display: 'grid', flex: '0 0 auto', height: 44, placeItems: 'center', width: 44 }}
           >
             <X size={18} />
           </button>

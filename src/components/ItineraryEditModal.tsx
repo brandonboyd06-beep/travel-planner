@@ -32,12 +32,14 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
   const [afterStopId, setAfterStopId] = useState('')
   const [editing, setEditing] = useState<{ dayId: string; stop: ItineraryStop } | null>(null)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const planRef = useRef(plan)
 
   const targetDay = plan.days.find((day) => day.id === targetDayId) ?? initialDay
+  const displayDay = editing ? plan.days.find((day) => day.id === editing.dayId) ?? targetDay : targetDay
   const matchedPlace = useMemo(() => findTripPlace(name), [name])
 
   useEffect(() => {
@@ -55,6 +57,7 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
     setAfterStopId(nextDay.stops.at(-1)?.id ?? '')
     setEditing(null)
     setError('')
+    setSuccess('')
     window.setTimeout(() => inputRef.current?.focus(), 0)
   }, [dayId, initialName])
 
@@ -87,13 +90,14 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
 
   if (!dayId) return null
 
-  const resetForm = () => {
+  const resetForm = (preserveSuccess = false) => {
     setName('')
     setKind('activity')
     setPriority('core')
     setNote('')
     setEditing(null)
     setError('')
+    if (!preserveSuccess) setSuccess('')
     inputRef.current?.focus()
   }
 
@@ -103,6 +107,10 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
     const trimmed = name.trim()
     if (!trimmed) {
       setError('Add the place or activity name first.')
+      return
+    }
+    if (!editing && kind === 'lodging') {
+      setError('An overnight stay also changes the route and booking plan. Ask Miller Time to add it so the sleeping city, drive, and next day stay connected.')
       return
     }
 
@@ -127,7 +135,8 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
         }, afterStopId || undefined)
         setAfterStopId(addedStopId)
       }
-      resetForm()
+      setSuccess(editing ? `${trimmed} was updated.` : `${matchedPlace?.name ?? trimmed} was added to ${targetDay.day}, October ${targetDay.date}.`)
+      resetForm(true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'That itinerary change could not be saved.')
     }
@@ -140,12 +149,13 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
     setPriority(stop.priority)
     setNote(stop.note ?? '')
     setError('')
+    setSuccess('')
     inputRef.current?.focus()
   }
 
   return (
     <div className="itinerary-modal-layer" role="dialog" aria-modal="true" aria-labelledby="itinerary-editor-title">
-      <button className="itinerary-modal-scrim" type="button" onClick={onClose} aria-label="Close itinerary editor" />
+      <button className="itinerary-modal-scrim" type="button" onClick={onClose} aria-hidden="true" tabIndex={-1} />
       <section ref={dialogRef} className="itinerary-editor-modal">
         <header>
           <div><span>Easy itinerary editor</span><h2 id="itinerary-editor-title">Change the trip</h2><p>Add a stop, reorder a day, or move something without rebuilding the whole plan.</p></div>
@@ -155,29 +165,30 @@ export function ItineraryEditModal({ dayId, initialName = '', onClose }: Itinera
         <form className="itinerary-add-form" onSubmit={submit}>
           <div className="itinerary-form-heading"><Plus /><div><strong>{editing ? `Edit ${editing.stop.name}` : 'Add a stop'}</strong><span>Common Banff-area places are pinned automatically.</span></div></div>
           <label className="field wide"><span>Place or activity</span><input ref={inputRef} list="trip-place-options" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Plain of Six Glaciers Tea House" maxLength={120} /><datalist id="trip-place-options">{tripPlaces.map((place) => <option value={place.name} key={place.id} />)}</datalist></label>
-          {!editing ? <label className="field"><span>Day</span><select value={targetDayId} onChange={(event) => { setTargetDayId(event.target.value); const day = plan.days.find((item) => item.id === event.target.value); setAfterStopId(day?.stops.at(-1)?.id ?? '') }}>{plan.days.map((day) => <option value={day.id} key={day.id}>{day.day}, Oct {day.date} · {day.title}</option>)}</select></label> : null}
+          {!editing ? <label className="field"><span>Day</span><select value={targetDayId} onChange={(event) => { setTargetDayId(event.target.value); const day = plan.days.find((item) => item.id === event.target.value); setAfterStopId(day?.stops.at(-1)?.id ?? ''); setSuccess('') }}>{plan.days.map((day) => <option value={day.id} key={day.id}>{day.day}, Oct {day.date} · {day.title}</option>)}</select></label> : null}
           {!editing ? <label className="field"><span>Place after</span><select value={afterStopId} onChange={(event) => setAfterStopId(event.target.value)}><option value={START_OF_DAY}>At the start</option>{targetDay.stops.map((stop) => <option value={stop.id} key={stop.id}>{stop.name}</option>)}</select></label> : null}
-          <label className="field"><span>Type</span><select value={kind} onChange={(event) => setKind(event.target.value as ItineraryStopKind)}>{kinds.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
-          <label className="field"><span>Plan status</span><select value={priority} disabled={editing?.stop.priority === 'fixed' && editing.stop.source !== 'miller'} onChange={(event) => setPriority(event.target.value as ItineraryStopPriority)}><option value="core">Core plan</option><option value="optional">Optional</option>{editing?.stop.priority === 'fixed' ? <option value="fixed">Fixed</option> : null}</select></label>
+          <label className="field"><span>Type</span><select value={kind} onChange={(event) => setKind(event.target.value as ItineraryStopKind)}>{kinds.map((item) => <option value={item.value} key={item.value} disabled={!editing && item.value === 'lodging'}>{item.value === 'lodging' && !editing ? 'Lodging (ask Miller Time)' : item.label}</option>)}</select></label>
+          <label className="field"><span>Plan status</span><select value={priority} disabled={editing?.stop.priority === 'fixed'} onChange={(event) => setPriority(event.target.value as ItineraryStopPriority)}><option value="core">Core plan</option><option value="optional">Optional</option>{editing?.stop.priority === 'fixed' ? <option value="fixed">Fixed</option> : null}</select></label>
           <label className="field wide"><span>Helpful note <small>optional</small></span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Timing, reservation, weather, or group note" maxLength={300} /></label>
           <div className={`place-match ${matchedPlace ? 'matched' : ''}`}><MapPin />{matchedPlace ? <span><strong>Map pin found:</strong> {matchedPlace.name}</span> : <span>Custom stops still open by name in Google Maps. Let Miller Time place it if you want a precise in-app pin.</span>}</div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
-          <div className="itinerary-form-actions">{editing ? <Button type="button" className="ghost" onClick={resetForm}>Cancel edit</Button> : null}<Button type="submit" className="primary" disabled={!canEdit}>{editing ? 'Save stop' : 'Add to itinerary'}</Button></div>
+          {success ? <p className="form-message success" role="status">{success}</p> : null}
+          <div className="itinerary-form-actions">{editing ? <Button type="button" className="ghost" onClick={() => resetForm()}>Cancel edit</Button> : null}<Button type="submit" className="primary" disabled={!canEdit}>{editing ? 'Save stop' : 'Add to itinerary'}</Button></div>
         </form>
 
         <div className="day-editor-list">
-          <div className="day-editor-list-heading"><div><strong>{initialDay.day}, October {initialDay.date}</strong><span>{initialDay.title}</span></div><b>{initialDay.stops.length} stops</b></div>
-          {initialDay.stops.map((stop, index) => (
+          <div className="day-editor-list-heading"><div><strong>{displayDay.day}, October {displayDay.date}</strong><span>{displayDay.title}</span></div><b>{displayDay.stops.length} stops</b></div>
+          {displayDay.stops.map((stop, index) => (
             <article className="day-editor-stop" key={stop.id}>
               <GripVertical aria-hidden="true" />
               <span className="stop-order">{index + 1}</span>
               <div><strong>{stop.name}</strong><small>{stop.priority === 'fixed' ? 'Fixed logistics' : stop.priority === 'optional' ? 'Optional' : 'Core plan'}{stop.coordinates ? ' · Map ready' : ' · Google search'}</small></div>
-              <label><span className="sr-only">Move {stop.name} to another day</span><select value={initialDay.id} onChange={(event) => moveStop(initialDay.id, event.target.value, stop.id)} disabled={!canEdit || (stop.priority === 'fixed' && stop.source !== 'miller')}>{plan.days.map((day) => <option value={day.id} key={day.id}>{day.day} {day.date}</option>)}</select></label>
+              <label><span className="sr-only">Move {stop.name} to another day</span><select value={displayDay.id} onChange={(event) => moveStop(displayDay.id, event.target.value, stop.id)} disabled={!canEdit || stop.priority === 'fixed'}>{plan.days.map((day) => <option value={day.id} key={day.id}>{day.day} {day.date}</option>)}</select></label>
               <div className="stop-row-actions">
-                <button type="button" onClick={() => reorderStop(initialDay.id, stop.id, -1)} disabled={!canEdit || (stop.priority === 'fixed' && stop.source !== 'miller') || index === 0} aria-label={`Move ${stop.name} earlier`}><ArrowUp /></button>
-                <button type="button" onClick={() => reorderStop(initialDay.id, stop.id, 1)} disabled={!canEdit || (stop.priority === 'fixed' && stop.source !== 'miller') || index === initialDay.stops.length - 1} aria-label={`Move ${stop.name} later`}><ArrowDown /></button>
-                <button type="button" onClick={() => startEditing(initialDay.id, stop)} disabled={!canEdit} aria-label={`Edit ${stop.name}`}><Pencil /></button>
-                <button type="button" onClick={() => { if (window.confirm(`Remove ${stop.name} from the itinerary?`)) removeStop(initialDay.id, stop.id) }} disabled={!canEdit || (stop.priority === 'fixed' && stop.source !== 'miller')} aria-label={`Remove ${stop.name}`}><Trash2 /></button>
+                <button type="button" onClick={() => reorderStop(displayDay.id, stop.id, -1)} disabled={!canEdit || stop.priority === 'fixed' || index === 0} aria-label={`Move ${stop.name} earlier`}><ArrowUp /></button>
+                <button type="button" onClick={() => reorderStop(displayDay.id, stop.id, 1)} disabled={!canEdit || stop.priority === 'fixed' || index === displayDay.stops.length - 1} aria-label={`Move ${stop.name} later`}><ArrowDown /></button>
+                <button type="button" onClick={() => startEditing(displayDay.id, stop)} disabled={!canEdit || stop.priority === 'fixed'} aria-label={`Edit ${stop.name}`}><Pencil /></button>
+                <button type="button" onClick={() => { if (window.confirm(`Remove ${stop.name} from the itinerary?`)) removeStop(displayDay.id, stop.id) }} disabled={!canEdit || stop.priority === 'fixed'} aria-label={`Remove ${stop.name}`}><Trash2 /></button>
               </div>
             </article>
           ))}

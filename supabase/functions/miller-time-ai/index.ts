@@ -4,8 +4,9 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_MODEL = 'gpt-5.6-terra'
-const OPENAI_TIMEOUT_MS = 55_000
-const OPENAI_REPAIR_TIMEOUT_MS = 45_000
+const OPENAI_TIMEOUT_MS = 50_000
+const OPENAI_REPAIR_TIMEOUT_MS = 35_000
+const OPENAI_TOTAL_TIMEOUT_MS = 80_000
 const MAX_BODY_BYTES = 48_000
 const MAX_CHANGE_REQUEST_LENGTH = 1_200
 const MAX_ITINERARY_BYTES = 22_000
@@ -31,7 +32,7 @@ const textEncoder = new TextEncoder()
 
 const tripBrief = `
 TRIP FACTS
-- Banff & the Canadian Rockies, October 3–10, 2026 (7 nights), for Brandon, Alex, Contir, and Miller Time.
+- Banff & the Canadian Rockies, October 3–10, 2026 (7 nights), for four adults.
 - Fly into Calgary; one larger Avis rental vehicle. Maximum lodging budget: $8,000 total / $2,000 per traveler.
 - This website is a planning aid, not a booking engine. Rates, inventory, schedules, weather, trails, and seasonal operations must be verified with the official provider.
 
@@ -66,8 +67,8 @@ ACTIVITY STYLE AND CONSTRAINTS
 - Main options: Lake Louise lakeshore, Lake Agnes, Little Beehive, Moraine Rockpile, Gondola, Upper Hot Springs, Johnston Canyon, Lake Minnewanka, Cave and Basin, Peyto Lake, Columbia Icefield, Policeman’s Creek, Grotto Canyon, and Grassi Lakes only if confirmed open.
 
 HOW THE WEBSITE WORKS
-- Overview: trip facts and priority checklist. Itinerary: each day plus expandable options and full logistics. Book & Reserve: the action center for live official-source guidance, clear booking deadlines, direct provider links, and shared completion status; the group only needs one of the two lake-shuttle choices. Lodging: filters, preferred stay, three clickable scenarios, detailed costs, and calculator. Transportation, Dining, and Things To Do: researched option catalogs with filters and expandable lists. Map: trip pins and an Open in Google Maps action. Budget: editable planning estimates. Notes: browser-local lists and notes.
-- Edits save to this browser by default. Account creation is optional and only needed to collaborate/sync with the group. Guest AI chat stays browser-local. Signed-in users get a private, per-user, per-trip transcript in secure cloud storage so their conversation resumes on another device.
+- Overview: trip facts and a read-only snapshot of the booking center. Itinerary: each day plus expandable options and full logistics. Book & Reserve: the action center for live official-source guidance, clear booking deadlines, direct provider links, and shared completion status; the group only needs one of the two lake-shuttle choices. Lodging: filters, preferred stay, three clickable scenarios, detailed costs, and calculator. Transportation, Dining, and Things To Do: researched option catalogs with filters and expandable lists. Map: trip pins and an Open in Google Maps action. Budget: editable planning estimates. Notes: packing, safety, booking status, and trip notes; those choices are device-only for guests and shared for signed-in trip members.
+- Edits save to this browser by default. Account creation is optional and only needed to collaborate/sync with the group. Signed-in trip choices, including shared notes and packing lists, sync to the shared trip; Miller Time never receives personal notes or packing-list contents. Guest AI chat stays browser-local. Signed-in users get a private, per-user, per-trip transcript in secure cloud storage so their conversation resumes on another device.
 `.trim()
 
 const systemPrompt = `You are Miller Time AI, the warm, practical virtual travel agent inside the Banff 2026 planner. You know the site and the plan described below. Answer questions about the itinerary, explain any screen or choice, compare options, and suggest easy changes that respect the group's dates, budget, pace, transportation constraints, and October weather risk.
@@ -144,7 +145,10 @@ interface OpenAIResponse {
 interface OpenAIInvocationOptions {
   webSearch?: boolean
   timeoutMs?: number
+  deadlineAt?: number
   reasoningEffort?: 'low' | 'medium'
+  retryIncomplete?: boolean
+  safetyIdentifier?: string
 }
 
 interface CompactItineraryStop {
@@ -622,7 +626,7 @@ function rewriteSafetyWarnings(operations: ProposalOperation[], itinerary: Compa
   const warnings: string[] = []
   if (baseChanges.length) {
     warnings.push(`Overnight bases change on ${baseChanges.join(', ')}. Confirm new lodging before canceling anything already reserved.`)
-    warnings.push('This applies the day-by-day itinerary only; Lodging, Book & Reserve, and Budget keep their current planning entries until you update them separately.')
+    warnings.push('This applies the day-by-day itinerary only. Book & Reserve will rematch its dates automatically; lodging research choices and Budget estimates still need a separate review.')
   }
   if (fixedChanges.length) warnings.push(`Fixed lodging, shuttle, or travel details change on ${fixedChanges.join(', ')}. Recheck every affected reservation before applying.`)
   return warnings
@@ -1133,7 +1137,9 @@ async function invokeOpenAI(
   maxOutputTokens: number,
   options: OpenAIInvocationOptions = {},
 ) {
-  const timeoutMs = options.timeoutMs ?? OPENAI_TIMEOUT_MS
+  const remainingMs = options.deadlineAt ? options.deadlineAt - Date.now() : Number.POSITIVE_INFINITY
+  if (remainingMs <= 1_000) throw new DOMException('The OpenAI request deadline was reached.', 'AbortError')
+  const timeoutMs = Math.max(1_000, Math.min(options.timeoutMs ?? OPENAI_TIMEOUT_MS, remainingMs))
   const useWebSearch = options.webSearch ?? true
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -1150,6 +1156,7 @@ async function invokeOpenAI(
         store: false,
         reasoning: { effort: options.reasoningEffort || Deno.env.get('OPENAI_REASONING_EFFORT') || 'low' },
         max_output_tokens: maxOutputTokens,
+        ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
         instructions,
         input,
         ...(useWebSearch ? {
@@ -1172,6 +1179,27 @@ async function invokeOpenAI(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function invokeOpenAIWithIncompleteRetry(
+  apiKey: string,
+  instructions: string,
+  input: Array<{ role: 'user' | 'assistant'; content: string }>,
+  maxOutputTokens: number,
+  options: OpenAIInvocationOptions = {},
+) {
+  let response = await invokeOpenAI(apiKey, instructions, input, maxOutputTokens, options)
+  let result = await response.json().catch(() => ({})) as OpenAIResponse
+  if (options.retryIncomplete !== false && response.ok && result.status === 'incomplete' && result.incomplete_details?.reason === 'max_output_tokens') {
+    console.warn('OpenAI response hit max_output_tokens; retrying once with a larger answer budget')
+    response = await invokeOpenAI(apiKey, instructions, input, Math.min(maxOutputTokens + 4_000, 30_000), {
+      ...options,
+      reasoningEffort: 'low',
+      timeoutMs: Math.min(options.timeoutMs ?? OPENAI_TIMEOUT_MS, 45_000),
+    })
+    result = await response.json().catch(() => ({})) as OpenAIResponse
+  }
+  return { response, result }
 }
 
 function openAIErrorCode(result: OpenAIResponse) {
@@ -1210,6 +1238,8 @@ async function repairAssistantProposal(
   itinerary: CompactItinerary,
   revision: number,
   trustedSources: SourceLink[],
+  deadlineAt: number,
+  safetyIdentifier: string,
 ) {
   const repairInstructions = `
 You are the deterministic repair stage for a travel-planning application. Return one corrected, review-only itinerary proposal for the same traveler request. Do not add new goals, ask the traveler to retry, or claim anything was applied. The previous draft already passed the JSON schema but failed the application's route and itinerary safety checks.
@@ -1230,10 +1260,12 @@ REPAIR RULES
   }]
 
   try {
-    const response = await invokeOpenAI(apiKey, repairInstructions, repairMessages, 6_000, {
+    const response = await invokeOpenAI(apiKey, repairInstructions, repairMessages, 20_000, {
       webSearch: false,
       timeoutMs: OPENAI_REPAIR_TIMEOUT_MS,
+      deadlineAt,
       reasoningEffort: 'medium',
+      safetyIdentifier,
     })
     const result = await response.json().catch(() => ({})) as OpenAIResponse
     if (!response.ok || result.status === 'incomplete') {
@@ -1358,6 +1390,8 @@ export default {
 
     const apiKey = Deno.env.get('OPENAI_API_KEY')
     if (!apiKey) return json(503, { error: 'Miller Time AI has not been connected to OpenAI yet.' })
+    const openAIDeadlineAt = Date.now() + OPENAI_TOTAL_TIMEOUT_MS
+    const safetyIdentifier = await hashedClientKey(request, userId)
 
     if (action === 'propose_change') {
       const changeRequest = boundedString(payload.changeRequest, MAX_CHANGE_REQUEST_LENGTH)
@@ -1370,20 +1404,27 @@ export default {
       }
 
       const revision = baseRevision as number
+      const broadProposalRequest = looksLikeBroadRewriteRequest(changeRequest)
       const proposalMessages: ChatMessage[] = [{
         role: 'user',
         content: `Traveler change request:\n${changeRequest}\n\nCurrent itinerary revision: ${revision}\n<current_itinerary_data>\n${JSON.stringify(itinerary)}\n</current_itinerary_data>`,
       }]
 
       try {
-        const response = await invokeOpenAI(
+        const { response, result } = await invokeOpenAIWithIncompleteRetry(
           apiKey,
           `${systemPrompt}\n\n${assistantResponseInstructions}\n\nThe traveler used the dedicated itinerary-change shortcut, so resolve a concrete request as a proposal whenever it can be safely reviewed.`,
           proposalMessages,
-          6_000,
-          { webSearch: false, reasoningEffort: 'medium' },
+          broadProposalRequest ? 25_000 : 8_000,
+          {
+            webSearch: true,
+            reasoningEffort: 'medium',
+            deadlineAt: openAIDeadlineAt,
+            timeoutMs: broadProposalRequest ? 60_000 : OPENAI_TIMEOUT_MS,
+            retryIncomplete: !broadProposalRequest,
+            safetyIdentifier,
+          },
         )
-        const result = await response.json().catch(() => ({})) as OpenAIResponse
 
         if (!response.ok) {
           console.error('OpenAI proposal error', response.status, openAIErrorCode(result), result.error?.message?.slice(0, 300) || '')
@@ -1411,13 +1452,13 @@ export default {
         if (!parsed) {
           const reason = assistantOutputValidationReason(structured, itinerary, revision)
           console.error('OpenAI proposal validation failed', reason, result.status || 'unknown')
-          parsed = await repairAssistantProposal(apiKey, changeRequest, output, reason, itinerary, revision, modelSources)
+          parsed = await repairAssistantProposal(apiKey, changeRequest, output, reason, itinerary, revision, modelSources, openAIDeadlineAt, safetyIdentifier)
           if (!parsed) {
-            return json(200, {
-              answer: 'I could not turn that route into a safe day-by-day comparison. Nothing changed. Please name any dates that must stay fixed, then ask me to plan it again.',
+            return json(422, {
+              error: 'Miller Time mapped the route, but the day-by-day comparison did not pass the final safety check. Nothing changed. Tap Try again to rebuild it.',
               sources: modelSources,
-              resolution: 'needs_clarification',
               validationCode: reason,
+              retryable: true,
               searchedWeb: searchedWeb(result),
             })
           }
@@ -1460,6 +1501,7 @@ export default {
 
     const question = submittedMessages[submittedMessages.length - 1].content
     let conversation: StoredConversation | null = null
+    let memoryWarning = ''
     let messages = submittedMessages
 
     if (memoryClient && userId && tripId) {
@@ -1472,7 +1514,9 @@ export default {
         ]
       } catch (error) {
         console.error('Miller Time memory load failed', error instanceof Error ? error.message : 'unknown')
-        return json(503, { error: 'Miller Time could not reach your saved conversation. Please try again.' })
+        conversation = null
+        messages = submittedMessages
+        memoryWarning = 'Saved conversation could not be loaded, so this answer used the messages on this device.'
       }
     }
 
@@ -1508,14 +1552,15 @@ export default {
       : `${systemPrompt}\n\n${assistantResponseInstructions}`
 
     try {
-      const response = await invokeOpenAI(
+      const { response, result } = await invokeOpenAIWithIncompleteRetry(
         apiKey,
         responseInstructions,
         modelMessages,
-        broadRewriteRequest ? 6_000 : 5_400,
-        broadRewriteRequest ? { webSearch: false, reasoningEffort: 'medium' } : {},
+        broadRewriteRequest ? 25_000 : 5_400,
+        broadRewriteRequest
+          ? { webSearch: true, reasoningEffort: 'medium', deadlineAt: openAIDeadlineAt, timeoutMs: 60_000, retryIncomplete: false, safetyIdentifier }
+          : { deadlineAt: openAIDeadlineAt, safetyIdentifier },
       )
-      const result = await response.json().catch(() => ({})) as OpenAIResponse
 
       if (!response.ok) {
         console.error('OpenAI API error', response.status, openAIErrorCode(result), result.error?.message?.slice(0, 300) || '')
@@ -1543,14 +1588,23 @@ export default {
         console.error('OpenAI chat validation failed', reason, result.status || 'unknown')
         const attemptedProposal = broadRewriteRequest || (isRecord(structured) && structured.resolution === 'proposal')
         const repaired = attemptedProposal && itinerary
-          ? await repairAssistantProposal(apiKey, broadChangeRequest || question, output, reason, itinerary, revision, modelSources)
+          ? await repairAssistantProposal(apiKey, broadChangeRequest || question, output, reason, itinerary, revision, modelSources, openAIDeadlineAt, safetyIdentifier)
           : null
         if (repaired) {
           parsed = repaired
         } else {
           validationCode = reason
+          if (attemptedProposal) {
+            return json(422, {
+              error: 'Miller Time mapped the route, but the day-by-day comparison did not pass the final safety check. Nothing changed. Tap Try again to rebuild it.',
+              sources: modelSources,
+              validationCode: reason,
+              retryable: true,
+              searchedWeb: searchedWeb(result),
+            })
+          }
           parsed = {
-            answer: 'I could not turn that route into a safe day-by-day comparison. Nothing changed. Please name any dates that must stay fixed, then ask me to plan it again.',
+            answer: 'I could not safely validate that answer. Nothing changed. Please try again with the specific day or place you want help with.',
             resolution: 'needs_clarification',
           }
         }
@@ -1560,27 +1614,39 @@ export default {
       const sources = mergeProposalSources(modelSources, parsed.proposal)
       let assistantMessageId: number | undefined
       if (memoryClient && userId && conversation) {
-        const stored = await memoryClient.schema('travel_planner').from('ai_messages').insert([
-          { conversation_id: conversation.id, user_id: userId, role: 'user', content: question, sources: [], metadata: {} },
-          {
-            conversation_id: conversation.id,
-            user_id: userId,
-            role: 'assistant',
-            content: answer,
-            sources,
-            metadata: { resolution: parsed.resolution, ...(parsed.proposal ? { proposal: parsed.proposal } : {}) },
-          },
-        ]).select('id, role')
-        if (stored.error) throw stored.error
-        const storedAssistantId = Number(stored.data?.find((message) => message.role === 'assistant')?.id)
-        if (Number.isSafeInteger(storedAssistantId) && storedAssistantId > 0) assistantMessageId = storedAssistantId
-
-        const touched = await memoryClient
-          .schema('travel_planner')
-          .from('ai_conversations')
-          .update({ updated_at: new Date().toISOString() })
-          .eq('id', conversation.id)
-        if (touched.error) throw touched.error
+        let messagesSaved = false
+        try {
+          const stored = await memoryClient.schema('travel_planner').from('ai_messages').insert([
+            { conversation_id: conversation.id, user_id: userId, role: 'user', content: question, sources: [], metadata: {} },
+            {
+              conversation_id: conversation.id,
+              user_id: userId,
+              role: 'assistant',
+              content: answer,
+              sources,
+              metadata: { resolution: parsed.resolution, ...(parsed.proposal ? { proposal: parsed.proposal } : {}) },
+            },
+          ]).select('id, role')
+          if (stored.error) throw stored.error
+          const storedAssistantId = Number(stored.data?.find((message) => message.role === 'assistant')?.id)
+          if (Number.isSafeInteger(storedAssistantId) && storedAssistantId > 0) assistantMessageId = storedAssistantId
+          messagesSaved = true
+        } catch (error) {
+          console.error('Miller Time memory save failed', error instanceof Error ? error.message : 'unknown')
+          memoryWarning = 'This answer is ready, but it could not be added to saved conversation history.'
+        }
+        if (messagesSaved) {
+          try {
+          const touched = await memoryClient
+            .schema('travel_planner')
+            .from('ai_conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversation.id)
+            if (touched.error) throw touched.error
+          } catch (error) {
+            console.error('Miller Time conversation timestamp update failed', error instanceof Error ? error.message : 'unknown')
+          }
+        }
       }
 
       return json(200, {
@@ -1590,6 +1656,7 @@ export default {
         ...(validationCode ? { validationCode } : {}),
         ...(parsed.proposal ? { proposal: parsed.proposal } : {}),
         ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
+        ...(memoryWarning ? { memoryWarning } : {}),
         memory: memoryClient ? 'cloud' : 'local',
         searchedWeb: searchedWeb(result),
       })

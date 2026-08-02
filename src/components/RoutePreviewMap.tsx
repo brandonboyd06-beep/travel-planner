@@ -1,4 +1,5 @@
-import { Maximize2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MapPinned, Maximize2 } from 'lucide-react'
 import { hasValidCoordinates, type RoutePoint } from '../lib/maps'
 import { RouteMap } from './RouteMap'
 
@@ -17,6 +18,8 @@ export function RoutePreviewMap({
   className = '',
   height = 180,
 }: RoutePreviewMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [mapVisible, setMapVisible] = useState(false)
   const totalStopCount = points.length
   const renderedPinCount = points.filter(hasValidCoordinates).length
   const visibleCount = renderedPinCount === totalStopCount
@@ -26,8 +29,33 @@ export function RoutePreviewMap({
     ? `${label}: ${totalStopCount} total route ${totalStopCount === 1 ? 'stop' : 'stops'}; ${renderedPinCount} shown as map ${renderedPinCount === 1 ? 'pin' : 'pins'}`
     : `${label}: no route stops`
 
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || mapVisible || totalStopCount === 0) return
+    if (typeof IntersectionObserver === 'undefined') {
+      setMapVisible(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return
+      setMapVisible(true)
+      observer.disconnect()
+    }, { rootMargin: '260px 0px' })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [mapVisible, totalStopCount])
+
+  const placeholder = (
+    <div className="route-preview-placeholder" aria-hidden="true">
+      <MapPinned />
+      <span>{totalStopCount > 0 ? 'Map preview loads as you scroll' : 'No mapped stops yet'}</span>
+    </div>
+  )
+
   return (
     <div
+      ref={containerRef}
       className={`route-preview-map ${className}`.trim()}
       style={{
         background: '#e9f1ef',
@@ -38,7 +66,7 @@ export function RoutePreviewMap({
         width: '100%',
       }}
     >
-      <RouteMap points={points} interactive={false} ariaHidden />
+      {mapVisible && totalStopCount > 0 ? <RouteMap points={points} interactive={false} ariaHidden /> : placeholder}
       <button
         type="button"
         aria-label={accessibleLabel}

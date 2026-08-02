@@ -271,7 +271,7 @@ export function ItineraryComparisonModal({ proposal, currentPlan, canApply, appl
 
   return createPortal(
     <div className="itinerary-comparison-layer">
-      <button className="itinerary-comparison-scrim" type="button" tabIndex={-1} aria-label="Close itinerary comparison" onClick={onClose} />
+      <button className="itinerary-comparison-scrim" type="button" tabIndex={-1} aria-hidden="true" onClick={onClose} />
       <section
         ref={dialogRef}
         className="itinerary-comparison-modal"

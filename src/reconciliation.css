@@ -1,0 +1,94 @@
+.reconciliation-banner {
+  margin-bottom: 17px;
+  padding: 16px 18px;
+  border: 1px solid #e8c879;
+  border-radius: 9px;
+  background: linear-gradient(105deg, #fff9e9, #fffdf7);
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  box-shadow: var(--shadow);
+}
+
+.reconciliation-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #fff0bf;
+  color: #8a5700;
+  display: grid;
+  place-items: center;
+}
+
+.reconciliation-icon svg { width: 20px; }
+.reconciliation-banner > div:nth-child(2) { display: grid; gap: 3px; }
+.reconciliation-banner span { color: #8a5700; font-size: 10px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.reconciliation-banner h2 { margin: 0; font-size: 16px; }
+.reconciliation-banner p { margin: 0; color: #5b4b2b; font-size: 11px; line-height: 1.5; }
+.reconciliation-banner .button { white-space: nowrap; }
+
+.reconciliation-reviewed {
+  width: fit-content;
+  min-height: 34px;
+  margin: 0 0 17px auto;
+  padding: 7px 10px;
+  border: 1px solid #b8e4d2;
+  border-radius: 6px;
+  background: #effaf5;
+  color: #08714f;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.reconciliation-reviewed svg { width: 15px; }
+
+.booking-row.not-in-plan { background: #fffaf7; }
+.booking-row.not-in-plan.complete { background: #fff5f1; }
+.booking-row.not-in-plan .booking-check:disabled { cursor: not-allowed; opacity: .48; }
+.booking-row.complete.not-in-plan .booking-priority.removed,
+.booking-row.not-in-plan .booking-priority.removed { color: #9f3f2d; background: #fff0ec; }
+.booking-timing.removed { grid-template-columns: 1fr; color: #873526; }
+
+.booking-plan-warning {
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid #efc6ba;
+  border-radius: 7px;
+  background: #fff3ef;
+  color: #873526;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.booking-plan-warning.booked { border-color: #e4b566; background: #fff8e8; color: #755000; }
+.booking-plan-warning > svg { width: 17px; }
+.booking-plan-warning > div { display: grid; gap: 3px; }
+.booking-plan-warning strong { font-size: 11px; line-height: 1.4; }
+.booking-plan-warning p { margin: 0; font-size: 10px; line-height: 1.45; }
+
+.booking-actions .booking-add-back {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid #c3daf4;
+  border-radius: 6px;
+  background: #f3f8ff;
+  color: var(--blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+@media (max-width: 760px) {
+  .reconciliation-banner { grid-template-columns: 34px minmax(0, 1fr); padding: 14px; }
+  .reconciliation-icon { width: 34px; height: 34px; }
+  .reconciliation-banner .button { grid-column: 1 / -1; width: 100%; }
+  .reconciliation-reviewed { width: 100%; margin-left: 0; }
+}

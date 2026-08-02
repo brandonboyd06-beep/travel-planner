@@ -6,8 +6,40 @@ const subscribe = (callback: () => void) => {
   return () => window.removeEventListener('popstate', callback)
 }
 
+let hashScrollGeneration = 0
+
+export function scrollToHashWhenReady(hash = window.location.hash) {
+  const generation = ++hashScrollGeneration
+  if (!hash) return
+  let id = ''
+  try {
+    id = decodeURIComponent(hash.replace(/^#/, ''))
+  } catch {
+    return
+  }
+  if (!id) return
+
+  let attempts = 0
+  const findTarget = () => {
+    if (generation !== hashScrollGeneration) return
+    const target = document.getElementById(id)
+    if (target) {
+      target.scrollIntoView({ block: 'start' })
+      return
+    }
+    attempts += 1
+    if (attempts < 40) window.setTimeout(findTarget, 50)
+  }
+  window.requestAnimationFrame(findTarget)
+}
+
 export function usePathname() {
   return useSyncExternalStore(subscribe, () => window.location.pathname, () => '/')
+}
+
+export function normalizePathname(pathname: string) {
+  if (!pathname || pathname === '/') return '/'
+  return pathname.replace(/\/+$/, '') || '/'
 }
 
 export function navigate(href: string, replace = false) {
@@ -16,20 +48,33 @@ export function navigate(href: string, replace = false) {
   window.dispatchEvent(new PopStateEvent('popstate'))
   const hash = new URL(href, window.location.origin).hash
   if (hash) {
-    window.requestAnimationFrame(() => document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }))
+    scrollToHashWhenReady(hash)
   } else {
+    hashScrollGeneration += 1
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
 }
 
 export function AppLink({ href, exact = false, className = '', onClick, ...props }: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { href: string; exact?: boolean }) {
-  const pathname = usePathname()
-  const active = exact ? pathname === href : pathname === href || (href !== '/' && pathname.startsWith(`${href}/`))
+  const pathname = normalizePathname(usePathname())
+  const targetPathname = normalizePathname(href.split(/[?#]/, 1)[0] || '/')
+  const active = exact
+    ? pathname === targetPathname
+    : pathname === targetPathname || (targetPathname !== '/' && pathname.startsWith(`${targetPathname}/`))
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(event)
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    if (
+      event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey
+      || (props.target && props.target !== '_self')
+      || props.download
+    ) return
     event.preventDefault()
     navigate(href)
   }
-  return <a href={href} className={`${className} ${active ? 'active' : ''}`.trim()} onClick={handleClick} {...props} />
+  return <a {...props} href={href} className={`${className} ${active ? 'active' : ''}`.trim()} aria-current={active ? 'page' : undefined} onClick={handleClick} />
 }

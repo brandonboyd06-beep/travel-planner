@@ -149,7 +149,7 @@ function boundedTextList(value: unknown, maximumItems: number, maximumLength: nu
 function visualForReplacement(location: string) {
   if (!/\bjasper\b/i.test(location)) return {}
   return {
-    image: '/images/icefields-parkway.jpg',
+    image: '/images/thumbs/icefields-parkway.jpg',
     imageAlt: 'Canadian Rockies route through the Icefields Parkway toward Jasper',
     tone: 'amber' as const,
   } satisfies Partial<ItineraryDay>

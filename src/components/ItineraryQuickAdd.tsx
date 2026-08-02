@@ -21,6 +21,7 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
   const [answer, setAnswer] = useState('')
   const [proposal, setProposal] = useState<ItineraryProposal | null>(null)
   const [proposalRequest, setProposalRequest] = useState('')
+  const [lastAttempt, setLastAttempt] = useState('')
   const [comparisonOpen, setComparisonOpen] = useState(false)
   const [comparisonBase, setComparisonBase] = useState<ItineraryPlan | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -28,10 +29,13 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
 
   useEffect(() => {
     const queued = window.sessionStorage.getItem('banff-2026:itinerary-idea')
-    if (!queued) return
-    window.sessionStorage.removeItem('banff-2026:itinerary-idea')
-    setDraft(queued)
-    inputRef.current?.focus()
+    const shouldFocus = window.sessionStorage.getItem('banff-2026:focus-itinerary-change') === 'true'
+    if (queued) {
+      window.sessionStorage.removeItem('banff-2026:itinerary-idea')
+      setDraft(queued)
+    }
+    if (shouldFocus) window.sessionStorage.removeItem('banff-2026:focus-itinerary-change')
+    if (queued || shouldFocus) window.setTimeout(() => inputRef.current?.focus(), 0)
   }, [])
 
   const askMiller = async (request = draft) => {
@@ -40,6 +44,7 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
     pendingRef.current = true
     const requestedPlan = plan
     const requestedRevision = requestedPlan.revision
+    setLastAttempt(changeRequest)
     setPending(true)
     setError('')
     setAnswer('')
@@ -64,13 +69,18 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
       }
       const sources = parseProposalSources(data?.sources)
       const nextProposal = parseItineraryProposal(data?.proposal, requestedRevision, sources)
-      setAnswer(typeof data?.answer === 'string' ? data.answer : nextProposal?.summary ?? '')
+      if (data?.resolution === 'proposal' && !nextProposal) throw new Error('Miller Time returned a plan I could not safely validate. Try wording the change more specifically.')
+      const nextAnswer = typeof data?.answer === 'string' ? data.answer : nextProposal?.summary ?? ''
       setProposal(nextProposal)
       setComparisonBase(nextProposal ? requestedPlan : null)
       setComparisonOpen(false)
       setProposalRequest(nextProposal ? changeRequest : '')
-      if (data?.resolution === 'proposal' && !nextProposal) throw new Error('Miller Time returned a plan I could not safely validate. Try wording the change more specifically.')
+      setAnswer(nextAnswer)
     } catch (caught) {
+      setAnswer('')
+      setProposal(null)
+      setComparisonBase(null)
+      setComparisonOpen(false)
       setError(caught instanceof Error ? caught.message : 'Miller Time could not plan that change.')
     } finally {
       pendingRef.current = false
@@ -127,7 +137,7 @@ export function ItineraryQuickAdd({ onManual }: ItineraryQuickAddProps) {
         onAdjust={proposalState === 'stale' ? () => { void askMiller(proposalRequest || draft) } : tweakProposal}
         onDismiss={() => { setProposal(null); setComparisonBase(null); setProposalRequest(''); setAnswer(''); setComparisonOpen(false) }}
       /> : answer ? <div className="miller-quick-answer"><Sparkles /><p>{answer}</p><button type="button" onClick={() => setAnswer('')} aria-label="Dismiss Miller Time response"><X /></button></div> : null}
-      {error ? <div className="miller-quick-error" role="alert"><p>{error}</p><button type="button" onClick={() => setError('')}>Dismiss</button></div> : null}
+      {error ? <div className="miller-quick-error" role="alert"><p>{error} A full-trip rebuild can take a little over a minute.</p><div>{lastAttempt ? <button type="button" onClick={() => { void askMiller(lastAttempt) }}>Try again</button> : null}<button type="button" onClick={() => setError('')}>Dismiss</button></div></div> : null}
       {lastChange ? <div className="itinerary-undo" role="status"><Check /><span>{lastChange}</span>{canUndo ? <button type="button" onClick={undo}><Undo2 />Undo</button> : null}<button type="button" onClick={clearLastChange} aria-label="Dismiss change confirmation"><X /></button></div> : null}
       {!canEdit ? <p className="viewer-note">You have view-only access. Ask the trip owner to make itinerary changes.</p> : null}
     </section>

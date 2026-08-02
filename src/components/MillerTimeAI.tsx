@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowUp, Cloud, HardDrive, RotateCcw, Sparkles, X } from 'lucide-react'
 import { navigate, usePathname } from './AppLink'
 import { readLocalPreferences } from '../lib/localPreferences'
@@ -35,6 +35,35 @@ const suggestions = [
   'What should we do if Tuesday has bad weather?',
 ]
 
+const MAX_LOCAL_MESSAGES = 30
+
+function capChatMessages(messages: ChatMessage[]) {
+  const conversation = messages.filter((message) => message.id !== 'welcome').slice(-(MAX_LOCAL_MESSAGES - 1))
+  return [welcome, ...conversation]
+}
+
+function parseStoredChatMessages(value: unknown) {
+  if (!Array.isArray(value)) return [welcome]
+  const parsed = value.flatMap((item): ChatMessage[] => {
+    if (!item || typeof item !== 'object') return []
+    const record = item as Record<string, unknown>
+    if ((record.role !== 'user' && record.role !== 'assistant') || typeof record.content !== 'string') return []
+    const sources = parseProposalSources(record.sources)
+    const revision = proposalRevision(record.proposal) ?? -1
+    const proposal = parseItineraryProposal(record.proposal, revision, sources)
+    return [{
+      id: typeof record.id === 'string' ? record.id : newId(),
+      role: record.role,
+      content: record.content.slice(0, 4_000),
+      sources,
+      proposal: proposal ?? undefined,
+      proposalState: proposal ? restoredProposalState(record.proposalState) : undefined,
+      proposalError: typeof record.proposalError === 'string' ? record.proposalError.slice(0, 500) : undefined,
+    }]
+  })
+  return capChatMessages(parsed.some((message) => message.id === 'welcome') ? parsed : [welcome, ...parsed])
+}
+
 const pageNames: Record<string, string> = {
   '/': 'Trip Overview',
   '/itinerary': 'Itinerary',
@@ -61,27 +90,37 @@ export function MillerTimeAI() {
   const { user, trip, openModal } = useCollaboration()
   const { plan, canEdit, applyAiProposal } = useItinerary()
   const [open, setOpen] = useState(false)
-  const [localMessages, setLocalMessages] = useLocalStorage<ChatMessage[]>('miller-time-ai-chat', [welcome])
+  const [storedLocalMessages, setStoredLocalMessages] = useLocalStorage<unknown>('miller-time-ai-chat', [welcome])
+  const localMessages = useMemo(() => parseStoredChatMessages(storedLocalMessages), [storedLocalMessages])
   const [cloudMessages, setCloudMessages] = useState<ChatMessage[]>([welcome])
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [error, setError] = useState('')
+  const [retryQuestion, setRetryQuestion] = useState('')
   const [reviewMessageId, setReviewMessageId] = useState<string | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLElement>(null)
   const pendingRef = useRef(false)
+  const requestGenerationRef = useRef(0)
   const comparisonBasesRef = useRef(new Map<string, ItineraryPlan>())
   const cloudMemory = Boolean(user && trip)
   const messages = cloudMemory ? cloudMessages : localMessages
   const reviewMessage = reviewMessageId ? messages.find((message) => message.id === reviewMessageId) : undefined
+  const setLocalMessages = useCallback((update: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => {
+    setStoredLocalMessages((current: unknown) => {
+      const safeCurrent = parseStoredChatMessages(current)
+      return capChatMessages(typeof update === 'function' ? update(safeCurrent) : update)
+    })
+  }, [setStoredLocalMessages])
   const updateMessages = (update: ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])) => {
     if (cloudMemory) setCloudMessages(update)
-    else setLocalMessages(update)
+    else setLocalMessages((current) => capChatMessages(typeof update === 'function' ? update(current) : update))
   }
 
   useEffect(() => {
-    setLocalMessages((current) => current.map((message) => message.id === 'welcome' ? welcome : message))
+    setLocalMessages((current) => capChatMessages(current.map((message) => message.id === 'welcome' ? welcome : message)))
   }, [setLocalMessages])
 
   useEffect(() => {
@@ -90,8 +129,13 @@ export function MillerTimeAI() {
       setMemoryLoading(false)
       return
     }
+    if (!open || pendingRef.current) {
+      setMemoryLoading(false)
+      return
+    }
 
     let active = true
+    const generation = requestGenerationRef.current
     setMemoryLoading(true)
     setError('')
     void getSupabaseClient().then(async (client) => {
@@ -100,7 +144,7 @@ export function MillerTimeAI() {
         body: { action: 'load', tripId: trip.id },
       })
       if (functionError) throw functionError
-      if (!active) return
+      if (!active || generation !== requestGenerationRef.current) return
 
       const storedMessages: unknown[] = Array.isArray(data?.messages) ? data.messages : []
       const restored: ChatMessage[] = storedMessages
@@ -125,24 +169,52 @@ export function MillerTimeAI() {
             proposalState: proposal ? restoredProposalState(metadata.proposalState) : undefined,
           }
         })
-      setCloudMessages([welcome, ...restored])
+      setCloudMessages([welcome, ...restored.slice(-30)])
     }).catch((caught) => {
-      if (active) setError(caught instanceof Error ? caught.message : 'Miller Time could not restore your saved chat.')
+      if (active && generation === requestGenerationRef.current) {
+        setRetryQuestion('')
+        setError(caught instanceof Error ? caught.message : 'Miller Time could not restore your saved chat.')
+      }
     }).finally(() => {
-      if (active) setMemoryLoading(false)
+      if (active && generation === requestGenerationRef.current) setMemoryLoading(false)
     })
 
     return () => { active = false }
-  }, [trip, user])
+  }, [open, pending, trip, user])
 
   useEffect(() => {
     if (!open) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     inputRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !reviewMessageId && !event.defaultPrevented) setOpen(false)
+      if (event.key === 'Escape' && !reviewMessageId && !event.defaultPrevented) {
+        event.preventDefault()
+        setOpen(false)
+        return
+      }
+      if (event.key !== 'Tab' || reviewMessageId || !panelRef.current) return
+      const focusable = [...panelRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+      window.setTimeout(() => previousFocus?.focus(), 0)
+    }
   }, [open, reviewMessageId])
 
   useEffect(() => {
@@ -154,6 +226,7 @@ export function MillerTimeAI() {
     if (!content || pendingRef.current || memoryLoading) return
 
     pendingRef.current = true
+    const requestGeneration = requestGenerationRef.current
     const requestedRevision = plan.revision
     const requestedItinerary = compactItinerary(plan)
     const userMessage: ChatMessage = { id: newId(), role: 'user', content }
@@ -162,12 +235,18 @@ export function MillerTimeAI() {
     setDraft('')
     setPending(true)
     setError('')
+    setRetryQuestion('')
 
     try {
       const client = await getSupabaseClient()
       if (!client) throw new Error('Miller Time AI’s secure connection is not configured on this deployment yet.')
-      const preferences = readLocalPreferences()
-      delete preferences['itinerary-plan-v1']
+      const allPreferences = readLocalPreferences()
+      const preferences = Object.fromEntries([
+        'preferred-lodging',
+        'lodging-scenario',
+        'budget-estimates',
+        'booking-progress',
+      ].flatMap((key) => Object.hasOwn(allPreferences, key) ? [[key, allPreferences[key]]] : []))
 
       const { data, error: functionError } = await client.functions.invoke('miller-time-ai', {
         body: {
@@ -179,6 +258,7 @@ export function MillerTimeAI() {
         },
       })
 
+      if (requestGeneration !== requestGenerationRef.current) return
       if (functionError) {
         const context = (functionError as { context?: Response }).context
         const result = context ? await context.clone().json().catch(() => ({})) as { error?: string } : {}
@@ -195,16 +275,21 @@ export function MillerTimeAI() {
       updateMessages((current) => [...current, {
         id: assistantMessageId,
         role: 'assistant',
-        content: data.answer,
+        content: `${data.answer}${typeof data.memoryWarning === 'string' ? `\n\nNote: ${data.memoryWarning}` : ''}`,
         sources,
         proposal: proposal ?? undefined,
         proposalState: proposal ? 'pending' : undefined,
       }])
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Miller Time AI could not answer just now.')
+      if (requestGeneration === requestGenerationRef.current) {
+        setRetryQuestion(content)
+        setError(caught instanceof Error ? caught.message : 'Miller Time AI could not answer just now.')
+      }
     } finally {
-      pendingRef.current = false
-      setPending(false)
+      if (requestGeneration === requestGenerationRef.current) {
+        pendingRef.current = false
+        setPending(false)
+      }
     }
   }
 
@@ -233,7 +318,10 @@ export function MillerTimeAI() {
         },
       })
       if (functionError) throw functionError
-    }).catch(() => setError('That review status is updated here, but Miller Time could not sync it across devices.'))
+    }).catch(() => {
+      setRetryQuestion('')
+      setError('That review status is updated here, but Miller Time could not sync it across devices.')
+    })
   }
 
   const displayProposalState = (message: ChatMessage): MillerProposalState => {
@@ -275,7 +363,15 @@ export function MillerTimeAI() {
   }
 
   const resetChat = () => {
+    if (pending || memoryLoading) return
+    if (messages.length > 1 && !window.confirm(cloudMemory
+      ? 'Start a fresh chat? This permanently clears Miller Time’s saved conversation for your account.'
+      : 'Start a fresh chat? This clears Miller Time’s conversation from this device.')) return
+    requestGenerationRef.current += 1
+    pendingRef.current = false
+    setPending(false)
     setError('')
+    setRetryQuestion('')
     setReviewMessageId(null)
     comparisonBasesRef.current.clear()
     if (!cloudMemory || !trip) {
@@ -290,7 +386,10 @@ export function MillerTimeAI() {
         body: { action: 'reset', tripId: trip.id },
       })
       if (functionError) throw functionError
-    }).catch((caught) => setError(caught instanceof Error ? caught.message : 'Miller Time could not clear your saved chat.'))
+    }).catch((caught) => {
+      setRetryQuestion('')
+      setError(caught instanceof Error ? caught.message : 'Miller Time could not clear your saved chat.')
+    })
   }
 
   return (
@@ -299,12 +398,12 @@ export function MillerTimeAI() {
         <span className="miller-launcher-icon"><img src="/brand/mt-travel-logo-320.jpg" alt="" /></span>
         <span><strong>Miller Time AI</strong><small>Your virtual travel agent</small></span>
       </button>
-      {open ? <button className="miller-scrim" type="button" aria-label="Close Miller Time AI" onClick={() => setOpen(false)} /> : null}
-      <aside id="miller-time-panel" className={`miller-panel ${open ? 'open' : ''}`} aria-hidden={!open} aria-label="Miller Time AI virtual travel agent">
+      {open ? <button className="miller-scrim" type="button" aria-hidden="true" tabIndex={-1} onClick={() => setOpen(false)} /> : null}
+      <aside ref={panelRef} id="miller-time-panel" className={`miller-panel ${open ? 'open' : ''}`} role="dialog" aria-modal={open || undefined} aria-hidden={!open} aria-label="Miller Time AI virtual travel agent">
         <header className="miller-header">
           <div className="miller-avatar"><img src="/brand/mt-travel-logo-320.jpg" alt="" /></div>
           <div><span><i />Ready to plan</span><strong>Miller Time AI</strong><small>Brewery scout · trip expert · live web search</small></div>
-          <button type="button" onClick={resetChat} aria-label="Start a fresh chat"><RotateCcw /></button>
+          <button type="button" onClick={resetChat} disabled={pending || memoryLoading} aria-label="Start a fresh chat"><RotateCcw /></button>
           <button type="button" onClick={() => setOpen(false)} aria-label="Close Miller Time AI"><X /></button>
         </header>
         <div className="miller-context">
@@ -313,8 +412,26 @@ export function MillerTimeAI() {
             You’re viewing <strong>{pageNames[pathname] ?? 'the trip planner'}</strong>.
             {cloudMemory
               ? <small><Cloud /> Private cloud memory is on</small>
-              : <small><HardDrive /> Saved on this device only · <button type="button" onClick={openModal}>Sign in to remember across devices</button></small>}
-            <button className="miller-change-link" type="button" onClick={() => { if (draft.trim()) window.sessionStorage.setItem('banff-2026:itinerary-idea', draft.trim()); setOpen(false); navigate('/itinerary') }}><Sparkles />Plan an itinerary change</button>
+              : <small><HardDrive /> Saved on this device only · <button type="button" onClick={() => { setOpen(false); openModal() }}>Sign in to remember across devices</button></small>}
+            <button className="miller-change-link" type="button" onClick={() => {
+              if (draft.trim()) window.sessionStorage.setItem('banff-2026:itinerary-idea', draft.trim())
+              window.sessionStorage.setItem('banff-2026:focus-itinerary-change', 'true')
+              setOpen(false)
+              navigate('/itinerary')
+              let attempts = 0
+              const focusChangeInput = () => {
+                const input = document.getElementById('itinerary-change-input')
+                if (input instanceof HTMLInputElement) {
+                  window.sessionStorage.removeItem('banff-2026:focus-itinerary-change')
+                  input.focus()
+                  input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  return
+                }
+                attempts += 1
+                if (attempts < 20) window.setTimeout(focusChangeInput, 50)
+              }
+              window.setTimeout(focusChangeInput, 50)
+            }}><Sparkles />Plan an itinerary change</button>
           </span>
         </div>
         <div className="miller-messages" aria-live="polite">
@@ -345,7 +462,7 @@ export function MillerTimeAI() {
           {messages.length === 1 && !memoryLoading ? <div className="miller-suggestions">{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void ask(suggestion)}>{suggestion}</button>)}</div> : null}
           {memoryLoading ? <div className="miller-thinking"><i /><i /><i /><span>Restoring your conversation…</span></div> : null}
           {pending ? <div className="miller-thinking"><i /><i /><i /><span>Miller Time is researching…</span></div> : null}
-          {error ? <div className="miller-error"><p>{error}</p><button type="button" onClick={() => setError('')}>Dismiss</button></div> : null}
+          {error ? <div className="miller-error"><p>{error}{retryQuestion ? ' Large itinerary rebuilds can take a little over a minute.' : ''}</p><div>{retryQuestion ? <button type="button" onClick={() => { setError(''); void ask(retryQuestion) }}>Try again</button> : null}<button type="button" onClick={() => { setError(''); setRetryQuestion('') }}>Dismiss</button></div></div> : null}
           <div ref={endRef} />
         </div>
         <form className="miller-compose" onSubmit={submit}>
@@ -356,7 +473,7 @@ export function MillerTimeAI() {
             }
           }} placeholder="Ask about the trip, a brewery, or an easy change…" aria-label="Message Miller Time AI" />
           <button type="submit" disabled={!draft.trim() || pending || memoryLoading} aria-label="Send message"><ArrowUp /></button>
-          <small>Web results and tap lists can change. Always verify bookings, conditions, and who’s driving.</small>
+          <small>Questions and trip context are sent securely to OpenAI. Personal notes and packing lists are never included. Always verify bookings, conditions, and who’s driving.</small>
         </form>
       </aside>
       {reviewMessage?.proposal ? <ItineraryComparisonModal

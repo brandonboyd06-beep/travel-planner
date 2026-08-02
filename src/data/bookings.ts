@@ -2,6 +2,7 @@ export type BookingPriority = 'book-now' | 'plan-soon' | 'verify-later'
 
 export interface BookingItem {
   id: string
+  matchTerms: string[]
   title: string
   category: string
   tripDate: string
@@ -19,6 +20,7 @@ export interface BookingItem {
 export const bookingItems: BookingItem[] = [
   {
     id: 'parks-lakes-shuttle',
+    matchTerms: ['Moraine Lake'],
     title: 'Parks Canada lake shuttles',
     category: 'Required for Moraine Lake',
     tripDate: 'Sunday, Oct 4',
@@ -38,6 +40,7 @@ export const bookingItems: BookingItem[] = [
   },
   {
     id: 'roam-super-pass',
+    matchTerms: ['Moraine Lake'],
     title: 'Roam Reservable Super Pass',
     category: 'Best car-free alternative from Banff',
     tripDate: 'Sunday, Oct 4',
@@ -57,6 +60,7 @@ export const bookingItems: BookingItem[] = [
   },
   {
     id: 'banff-gondola',
+    matchTerms: ['Banff Gondola'],
     title: 'Banff Gondola',
     category: 'Timed attraction ticket',
     tripDate: 'Monday, Oct 5',
@@ -76,6 +80,7 @@ export const bookingItems: BookingItem[] = [
   },
   {
     id: 'sky-bistro',
+    matchTerms: ['Sky Bistro'],
     title: 'Sky Bistro',
     category: 'Optional summit dinner',
     tripDate: 'Monday, Oct 5',
@@ -95,6 +100,7 @@ export const bookingItems: BookingItem[] = [
   },
   {
     id: 'columbia-icefield',
+    matchTerms: ['Columbia Icefield'],
     title: 'Columbia Icefield Adventure',
     category: 'Optional timed tour',
     tripDate: 'Tuesday, Oct 6',
@@ -114,6 +120,7 @@ export const bookingItems: BookingItem[] = [
   },
   {
     id: 'lake-minnewanka',
+    matchTerms: ['Lake Minnewanka'],
     title: 'Lake Minnewanka Cruise',
     category: 'Optional flex-day activity',
     tripDate: 'Friday, Oct 9',
