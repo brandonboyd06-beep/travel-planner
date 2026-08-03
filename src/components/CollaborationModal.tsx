@@ -212,7 +212,7 @@ export function CollaborationModal() {
       await updatePassword(password)
       setPassword('')
       setAuthStep('credentials')
-      setMessage('Your password is saved. You are signed in and ready to plan.')
+      setMessage('Your password is saved. We’re finishing the shared-trip connection now.')
     } catch (caught) {
       setFormError(friendlyAuthError(caught, 'update'))
     } finally {

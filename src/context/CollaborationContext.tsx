@@ -35,7 +35,17 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 function messageFrom(error: unknown) {
-  return error instanceof Error ? error.message : 'Something went wrong. Please try again.'
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message
+      : ''
+
+  if (message.toLowerCase().includes('row-level security')) {
+    return 'Your sign-in worked, but the shared trip could not finish connecting. Tap Try again.'
+  }
+
+  return message || 'Something went wrong. Please try again.'
 }
 
 interface RemotePreferenceRow {
